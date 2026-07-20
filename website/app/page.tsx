@@ -1,6 +1,5 @@
-const RELEASE_BASE = "https://github.com/rschwabco/deck-threads/releases/latest/download";
-const APP_DOWNLOAD = `${RELEASE_BASE}/Deck-Threads-1.0.0-universal.dmg`;
-const PLUGIN_DOWNLOAD = `${RELEASE_BASE}/com.roie.deck-threads.streamDeckPlugin`;
+const RELEASES_URL = "https://github.com/rschwabco/deck-threads/releases";
+const PLUGIN_DOWNLOAD = "/downloads/com.roie.deck-threads.streamDeckPlugin";
 
 const keys = [
   { label: "DT1", title: "Deck Threads site", state: "working", delay: "0s" },
@@ -27,7 +26,7 @@ export default function Home() {
         <div className="nav-actions">
           <a href="#how-it-works">How it works</a>
           <a href="https://github.com/rschwabco/deck-threads" target="_blank" rel="noreferrer">GitHub</a>
-          <a className="nav-download" href={APP_DOWNLOAD}>Download</a>
+          <a className="nav-download" href="#download">Download</a>
         </div>
       </nav>
 
@@ -39,14 +38,14 @@ export default function Home() {
             Deck Threads turns Stream Deck into a live control surface for your desktop coding agent—so active work, unread results, and questions never disappear into the sidebar.
           </p>
           <div className="hero-actions">
-            <a className="button button-primary" href={APP_DOWNLOAD}>
-              <span>Download for macOS</span><span aria-hidden="true">↓</span>
+            <a className="button button-primary" href={RELEASES_URL}>
+              <span>macOS release status</span><span aria-hidden="true">↗</span>
             </a>
             <a className="button button-secondary" href={PLUGIN_DOWNLOAD}>
               Get the Stream Deck plugin
             </a>
           </div>
-          <p className="requirements">macOS 13+ · Apple silicon & Intel · Free and open source</p>
+          <p className="requirements">Signed macOS build coming soon · Plugin available now</p>
         </div>
 
         <div className="hero-visual" aria-label="Eight Deck Threads keys showing live coding-agent task states">
@@ -133,7 +132,7 @@ export default function Home() {
         <div className="privacy-note"><span className="privacy-mark">LOCAL</span><p><strong>Your task data stays on your Mac.</strong> No account, analytics, telemetry, cloud storage, or API key.</p></div>
       </section>
 
-      <section className="download-section">
+      <section className="download-section" id="download">
         <div className="download-grid" aria-hidden="true">
           {keys.map((key) => <span key={`footer-${key.label}`} className={key.state}>{key.state === "question" ? "?" : key.label}</span>)}
         </div>
@@ -141,10 +140,10 @@ export default function Home() {
           <div className="section-kicker">Ready when you are</div>
           <h2>Put your agent<br />at your fingertips.</h2>
           <div className="hero-actions">
-            <a className="button button-light" href={APP_DOWNLOAD}>Download for macOS <span aria-hidden="true">↓</span></a>
+            <a className="button button-light" href={RELEASES_URL}>macOS release status <span aria-hidden="true">↗</span></a>
             <a className="button button-ghost" href={PLUGIN_DOWNLOAD}>Stream Deck plugin</a>
           </div>
-          <p className="requirements">Version 1.0 · Universal macOS app · MIT licensed</p>
+          <p className="requirements">Signed macOS build coming soon · Universal app · MIT licensed</p>
         </div>
       </section>
 

@@ -17,12 +17,12 @@ test("server-renders the complete Deck Threads landing page", async () => {
   assert.match(html, /<title>Deck Threads — Agent tasks on Stream Deck<\/title>/i);
   assert.match(html, /Your tasks\./);
   assert.match(html, /Within reach\./);
-  assert.match(html, /Download for macOS/);
+  assert.match(html, /macOS release status/);
   assert.match(html, /Get the Stream Deck plugin/);
   assert.match(html, /Needs input/);
   assert.match(html, /Your task data stays on your Mac/);
-  assert.match(html, /Deck-Threads-1\.0\.0-universal\.dmg/);
-  assert.match(html, /com\.roie\.deck-threads\.streamDeckPlugin/);
+  assert.match(html, /\/downloads\/com\.roie\.deck-threads\.streamDeckPlugin/);
+  assert.doesNotMatch(html, /releases\/latest\/download\/Deck-Threads-1\.0\.0-universal\.dmg/);
   assert.match(html, /property="og:image"/);
   assert.match(html, /https:\/\/deck-threads\.cognitive-dynamics\.io\/og\.png/);
   assert.doesNotMatch(html, /codex|openai|Your site is taking shape|react-loading-skeleton/i);
