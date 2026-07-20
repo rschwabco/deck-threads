@@ -15,6 +15,7 @@ Deck Threads is an independent, open-source utility. It is not affiliated with o
 - Turns a key orange when Codex asks a question and is waiting for your answer.
 - Distinguishes working, question, unread, read, waiting, and error states with full-key color and motion.
 - Lets you choose, per state, whether Stream Deck keys show the full task title or only the compact project label.
+- Keeps Threads, Connections, Key labels, and Activity in separate companion views.
 - Opens the exact Codex task when its key is pressed.
 - Runs locally in the macOS menu bar and starts automatically at login.
 - Keeps task data on your Mac; the companion only listens on `127.0.0.1`.

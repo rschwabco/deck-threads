@@ -10,6 +10,7 @@ import {
   PushPinSimple,
   SquaresFour,
   TerminalWindow,
+  TextAa,
   Warning,
   X,
 } from "@phosphor-icons/react";
@@ -24,6 +25,9 @@ const STATUS_META: Record<CodexTaskStatus, { label: string; color: string; descr
   error: { label: "Error", color: "#FF5C70", description: "Red when a task cannot continue." },
   off: { label: "Empty", color: "#303746", description: "An unused slot stays dark." },
 };
+
+const TITLE_STATES: LabelConfigurableStatus[] = ["working", "question", "unread", "read", "waiting", "error"];
+type ActiveView = "threads" | "connections" | "labels" | "activity";
 
 const EMPTY_SNAPSHOT: SystemSnapshot = {
   scannedAt: new Date(0).toISOString(),
@@ -108,6 +112,7 @@ function ActionResult({ result }: { result?: { ok: boolean; message: string } })
 }
 
 export function App() {
+  const [activeView, setActiveView] = useState<ActiveView>("threads");
   const [snapshot, setSnapshot] = useState<SystemSnapshot>(EMPTY_SNAPSHOT);
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,9 +215,10 @@ export function App() {
         </div>
 
         <nav aria-label="Deck Threads">
-          <a className="nav-item nav-active" href="#threads"><SquaresFour /> Threads</a>
-          <a className="nav-item" href="#status"><Plug /> Connections</a>
-          <a className="nav-item" href="#activity"><TerminalWindow /> Activity</a>
+          <button className={`nav-item ${activeView === "threads" ? "nav-active" : ""}`} onClick={() => setActiveView("threads")}><SquaresFour /> Threads</button>
+          <button className={`nav-item ${activeView === "connections" ? "nav-active" : ""}`} onClick={() => setActiveView("connections")}><Plug /> Connections</button>
+          <button className={`nav-item ${activeView === "labels" ? "nav-active" : ""}`} onClick={() => setActiveView("labels")}><TextAa /> Key labels</button>
+          <button className={`nav-item ${activeView === "activity" ? "nav-active" : ""}`} onClick={() => setActiveView("activity")}><TerminalWindow /> Activity</button>
         </nav>
 
         <div className="sidebar-note">
@@ -223,7 +229,8 @@ export function App() {
       </aside>
 
       <main className="main-content">
-        <header className="topbar" id="threads">
+        {activeView === "threads" && <>
+        <header className="topbar">
           <div>
             <p className="section-kicker">Live task surface</p>
             <h1>Your Codex work, on deck.</h1>
@@ -284,12 +291,28 @@ export function App() {
           </div>
           <ActionResult result={actionResult} />
         </section>
+        </>}
 
-        <div className="lower-grid" id="status">
-          <section className="connection-panel" aria-labelledby="connection-heading">
+        {activeView === "connections" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Local services</p>
+              <h1>Connections</h1>
+              <p className="topbar-copy">Confirm that Codex Desktop, Stream Deck, and the local companion can see each other.</p>
+            </div>
+            <div className="topbar-actions">
+              <span className="scan-time">Updated {formatTime(snapshot.scannedAt)}</span>
+              <button className="button button-secondary" onClick={handleRefresh} disabled={refreshing}>
+                <ArrowsClockwise className={refreshing ? "spin" : ""} />
+                Refresh
+              </button>
+            </div>
+          </header>
+
+          <section className="connection-panel page-panel" aria-labelledby="connection-heading">
             <div className="panel-heading">
               <div>
-                <h2 id="connection-heading">Connections</h2>
+                <h2 id="connection-heading">Connection status</h2>
                 <p>The companion stays local. It reads Codex task state and serves it only to Stream Deck on this Mac.</p>
               </div>
             </div>
@@ -305,6 +328,42 @@ export function App() {
               </div>
             )}
           </section>
+        </>}
+
+        {activeView === "labels" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Stream Deck appearance</p>
+              <h1>Key labels</h1>
+              <p className="topbar-copy">Choose when a Stream Deck key includes the full Codex task name.</p>
+            </div>
+          </header>
+
+          <section className="title-settings-panel page-panel" aria-labelledby="title-settings-heading">
+            <div className="panel-heading">
+              <div>
+                <h2 id="title-settings-heading">Show thread titles</h2>
+                <p>Compact project labels always remain visible. Turn on the full task title for whichever states you want.</p>
+              </div>
+            </div>
+            <div className="title-settings-grid">
+              {TITLE_STATES.map((status) => (
+                <label className="title-setting-option" key={status}>
+                  <span className={`title-setting-dot swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
+                  <span className="title-setting-copy"><strong>{STATUS_META[status].label}</strong><small>{snapshot.displaySettings.showThreadTitle[status] ? "Title shown" : "Compact label only"}</small></span>
+                  <span className="label-toggle">
+                    <input
+                      type="checkbox"
+                      checked={snapshot.displaySettings.showThreadTitle[status]}
+                      onChange={(event) => void updateTitleVisibility(status, event.currentTarget.checked)}
+                      aria-label={`Show titles for ${STATUS_META[status].label} tasks`}
+                    />
+                    <span aria-hidden="true" />
+                  </span>
+                </label>
+              ))}
+            </div>
+          </section>
 
           <section className="behavior-panel" aria-labelledby="behavior-heading">
             <div className="panel-heading">
@@ -314,29 +373,29 @@ export function App() {
               </div>
             </div>
             <div className="behavior-list">
-              {(Object.keys(STATUS_META) as CodexTaskStatus[]).filter((status) => status !== "off").map((status) => (
+              {TITLE_STATES.map((status) => (
                 <div className="behavior-row" key={status}>
                   <span className={`behavior-swatch swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
                   <div><strong>{STATUS_META[status].label}</strong><p>{STATUS_META[status].description}</p></div>
-                  <label className="label-toggle">
-                    <input
-                      type="checkbox"
-                      checked={snapshot.displaySettings.showThreadTitle[status]}
-                      onChange={(event) => void updateTitleVisibility(status, event.currentTarget.checked)}
-                    />
-                    <span aria-hidden="true" />
-                    Show title
-                  </label>
                 </div>
               ))}
             </div>
           </section>
-        </div>
+        </>}
 
-        <section className="event-panel" id="activity" aria-labelledby="event-heading">
+        {activeView === "activity" && <>
+        <header className="topbar">
+          <div>
+            <p className="section-kicker">Session log</p>
+            <h1>Activity</h1>
+            <p className="topbar-copy">See task transitions and companion events from this session.</p>
+          </div>
+        </header>
+
+        <section className="event-panel page-panel" aria-labelledby="event-heading">
           <div className="panel-heading">
             <div>
-              <h2 id="event-heading">Activity</h2>
+              <h2 id="event-heading">Recent events</h2>
               <p>Task transitions and companion events from this session.</p>
             </div>
             <button className="text-button" onClick={() => setEvents([])} disabled={events.length === 0}>Clear</button>
@@ -360,6 +419,7 @@ export function App() {
             ))}
           </div>
         </section>
+        </>}
       </main>
     </div>
   );

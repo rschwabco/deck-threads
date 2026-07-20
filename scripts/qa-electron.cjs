@@ -47,37 +47,53 @@ async function captureWindow(application, outputPath) {
     const taskCount = await taskSlots.count();
     const firstTaskLabel = await taskSlots.first().getAttribute("aria-label");
     const source = (await page.locator(".summary-strip p").textContent())?.trim();
-    const streamDeckStatus = (await page.locator(".health-item").filter({ hasText: "Stream Deck" }).textContent())?.replace(/\s+/g, " ").trim();
 
     assert.equal(title, "Deck Threads");
     assert.equal(taskCount, 8);
     assert.match(firstTaskLabel || "", /Working|Question|Unread|Read/);
-    assert.match(streamDeckStatus || "", /Online|Offline|Error/);
-    assert.ok(await page.getByText("Attention signals", { exact: true }).isVisible());
-
-    const titleToggles = page.locator(".label-toggle input");
-    assert.equal(await titleToggles.count(), 6);
-    const questionRow = page.locator(".behavior-row").filter({ hasText: "Question" });
-    const questionToggle = questionRow.getByRole("checkbox");
-    assert.ok(await questionRow.isVisible());
-    assert.equal(await questionToggle.isChecked(), false);
-    await questionRow.locator("label").click();
-    assert.equal(await questionToggle.isChecked(), true);
-    await page.getByText("Stream Deck labels updated").waitFor();
-    const persistedSettings = JSON.parse(fs.readFileSync(path.join(userDataDir, "display-settings.json"), "utf8"));
-    assert.equal(persistedSettings.showThreadTitle.question, true);
+    assert.equal(await page.locator(".sidebar nav .nav-item").count(), 4);
 
     const invalidOpen = await page.evaluate(() => window.bridgeApi.openCodexThread("not-a-thread-id", "Invalid task"));
     assert.equal(invalidOpen.ok, false);
     assert.match(invalidOpen.message, /invalid task ID/i);
 
     await page.getByRole("button", { name: "Refresh" }).click();
-    await page.getByText("Task status refreshed").waitFor();
+    await page.waitForFunction(() => !document.querySelector(".button-secondary")?.hasAttribute("disabled"));
 
     const wideLayout = await layoutMetrics(page);
     assert.ok(wideLayout.bodyScrollWidth <= wideLayout.bodyClientWidth, `Wide layout overflow: ${JSON.stringify(wideLayout)}`);
     assert.ok(wideLayout.documentScrollWidth <= wideLayout.documentClientWidth, `Wide document overflow: ${JSON.stringify(wideLayout)}`);
     await captureWindow(application, "/tmp/deck-threads-wide.png");
+
+    await page.getByRole("button", { name: "Connections" }).click();
+    await page.getByRole("heading", { name: "Connection status" }).waitFor();
+    assert.equal(await page.locator(".task-grid").count(), 0);
+    const streamDeckStatus = (await page.locator(".health-item").filter({ hasText: "Stream Deck" }).textContent())?.replace(/\s+/g, " ").trim();
+    assert.match(streamDeckStatus || "", /Online|Offline|Error/);
+
+    await page.getByRole("button", { name: "Key labels" }).click();
+    await page.getByRole("heading", { name: "Show thread titles" }).waitFor();
+    assert.equal(await page.locator(".task-grid").count(), 0);
+    assert.ok(await page.getByText("Attention signals", { exact: true }).isVisible());
+
+    const titleToggles = page.locator(".title-setting-option input");
+    assert.equal(await titleToggles.count(), 6);
+    const questionRow = page.locator(".title-setting-option").filter({ hasText: "Question" });
+    const questionToggle = questionRow.getByRole("checkbox", { name: "Show titles for Question tasks" });
+    assert.ok(await questionRow.isVisible());
+    assert.equal(await questionToggle.isChecked(), false);
+    await questionRow.click();
+    assert.equal(await questionToggle.isChecked(), true);
+    await page.waitForTimeout(150);
+    const persistedSettings = JSON.parse(fs.readFileSync(path.join(userDataDir, "display-settings.json"), "utf8"));
+    assert.equal(persistedSettings.showThreadTitle.question, true);
+    await captureWindow(application, "/tmp/deck-threads-key-labels.png");
+
+    await page.getByRole("button", { name: "Activity" }).click();
+    await page.getByRole("heading", { name: "Recent events" }).waitFor();
+    assert.equal(await page.locator(".title-settings-panel").count(), 0);
+
+    await page.getByRole("button", { name: "Key labels" }).click();
 
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()[0].setSize(960, 680);
@@ -96,7 +112,7 @@ async function captureWindow(application, outputPath) {
       questionTitleEnabled: await questionToggle.isChecked(),
       wideLayout,
       compactLayout,
-      screenshots: ["/tmp/deck-threads-wide.png", "/tmp/deck-threads-compact.png"],
+      screenshots: ["/tmp/deck-threads-wide.png", "/tmp/deck-threads-key-labels.png", "/tmp/deck-threads-compact.png"],
     }, null, 2)}\n`);
   } finally {
     await application.close();

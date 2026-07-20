@@ -70,7 +70,7 @@ Keys refresh automatically. You do not need a refresh action.
 - The compact label combines a project abbreviation and that task's number inside the project, such as `DT1`.
 - A small marker identifies tasks from pinned projects.
 
-Open the Deck Threads companion and use **Attention signals → Show title** to choose whether each state includes the full task title. These choices are saved on your Mac and picked up by the Stream Deck plugin automatically.
+Open the Deck Threads companion, select **Key labels** in the sidebar, and use **Show thread titles** to choose whether each state includes the full task title. These choices are saved on your Mac and picked up by the Stream Deck plugin automatically.
 
 Recently active tasks are selected first, followed by tasks from pinned projects. Once a selected task owns a slot, it does not move just because another task's priority changes; it only leaves when it is no longer among the selected eight.
 
