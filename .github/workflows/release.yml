@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: macos-15
+    env:
+      CSC_LINK: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+      CSC_KEY_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            stream-deck/package-lock.json
+
+      - name: Require signing and notarization secrets
+        run: |
+          for variable in CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!variable:-}" ]]; then
+              echo "Missing required secret for $variable" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm --prefix stream-deck ci
+
+      - name: Test and package plugin
+        run: |
+          npm run test:state
+          npm run streamdeck:pack
+          npm run streamdeck:validate
+
+      - name: Build signed and notarized universal app
+        run: npm run release:mac
+
+      - name: Verify and collect artifacts
+        run: |
+          npm run release:verify
+          npm run release:submission
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deck-threads-${{ github.ref_name }}
+          path: release-submission/*
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" release-submission/* --verify-tag --generate-notes --title "Deck Threads ${GITHUB_REF_NAME#v}"

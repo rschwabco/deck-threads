@@ -1,0 +1,30 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  background: #17191d;
+  color: #f5f7fb;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { padding: 18px 14px 24px; }
+header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+h1 { margin: 0; font-size: 16px; letter-spacing: -0.02em; }
+header p { margin: 3px 0 0; color: #969da9; font-size: 11px; }
+.mark { width: 38px; height: 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; }
+.mark i { border-radius: 3px; background: #577dff; box-shadow: 0 0 10px rgba(87, 125, 255, .35); }
+.mark i:nth-child(2), .mark i:nth-child(7) { background: #a3b6ff; }
+.status-card { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid #2b3038; border-radius: 10px; background: #202329; }
+.status-card strong { display: block; font-size: 12px; }
+.status-card p { margin: 4px 0 0; color: #a6adb8; font-size: 10px; line-height: 1.45; }
+.status-dot { width: 8px; height: 8px; flex: 0 0 auto; margin-top: 3px; border-radius: 50%; background: #737984; box-shadow: 0 0 0 4px rgba(115, 121, 132, .12); }
+.status-dot.online { background: #49d78a; box-shadow: 0 0 0 4px rgba(73, 215, 138, .12); }
+.status-dot.offline { background: #ff6c76; box-shadow: 0 0 0 4px rgba(255, 108, 118, .12); }
+button { width: 100%; margin-top: 10px; padding: 9px 12px; border: 0; border-radius: 8px; background: #577dff; color: white; font: inherit; font-size: 11px; font-weight: 650; cursor: pointer; }
+button:hover { background: #6d8fff; }
+button.secondary { margin-top: 7px; border: 1px solid #343a44; background: transparent; color: #c8cdd5; }
+button:disabled { opacity: .45; cursor: default; }
+.help { margin-top: 19px; padding-top: 15px; border-top: 1px solid #2b3038; }
+.help h2 { margin: 0 0 8px; color: #c7ccd4; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; }
+.help ol { margin: 0; padding-left: 17px; color: #a6adb8; font-size: 10px; line-height: 1.55; }
+.help > p { margin: 10px 0 0; color: #717884; font-size: 9px; }

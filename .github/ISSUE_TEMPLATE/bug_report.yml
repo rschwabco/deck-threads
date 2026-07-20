@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible Deck Threads problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove private task names, project paths, source code, and credentials before submitting.
+  - type: input
+    id: version
+    attributes:
+      label: Deck Threads version
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: macOS, Stream Deck app, and device
+      placeholder: macOS 15.5, Stream Deck 7.1, Stream Deck +
+    validations:
+      required: true
+  - type: dropdown
+    id: connections
+    attributes:
+      label: Connection status
+      options:
+        - All three connected
+        - Codex Desktop disconnected
+        - Companion disconnected
+        - Stream Deck disconnected
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Use sanitized example names where needed.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      render: shell

@@ -1,0 +1,14 @@
+node_modules/
+dist/
+release/
+release-production/
+release-preview/
+release-submission/
+marketplace/
+build/icon.iconset/
+.DS_Store
+*.log
+*.tsbuildinfo
+*.streamDeckPlugin
+vite.config.js
+vite.config.d.ts

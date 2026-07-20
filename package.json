@@ -1,0 +1,90 @@
+{
+  "name": "deck-threads-companion",
+  "productName": "Deck Threads",
+  "version": "1.0.0",
+  "private": true,
+  "author": "Roie",
+  "description": "A local companion that brings live Codex Desktop tasks to Stream Deck.",
+  "homepage": "https://github.com/rschwabco/deck-threads#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rschwabco/deck-threads.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rschwabco/deck-threads/issues"
+  },
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -s first \"vite --host 127.0.0.1\" \"wait-on http://127.0.0.1:5173 && VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .\"",
+    "build": "tsc -b && vite build",
+    "package:mac": "npm run build && electron-builder --mac dir --universal",
+    "release:mac": "npm run build && electron-builder --config electron-builder.release.yml --mac dmg zip --universal",
+    "release:verify": "bash scripts/verify-release.sh",
+    "release:submission": "bash scripts/prepare-submission.sh",
+    "marketplace:assets": "electron scripts/generate-marketplace-assets.cjs",
+    "start": "electron .",
+    "test:state": "node scripts/test-codex-state.cjs",
+    "qa:electron": "node scripts/qa-electron.cjs",
+    "streamdeck:build": "npm --prefix stream-deck run build",
+    "streamdeck:validate": "npm --prefix stream-deck run validate",
+    "streamdeck:link": "npm --prefix stream-deck run link",
+    "streamdeck:pack": "npm --prefix stream-deck run pack",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "concurrently": "^10.0.3",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
+    "playwright": "^1.61.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.5",
+    "wait-on": "^9.0.10"
+  },
+  "build": {
+    "appId": "com.roie.deck-threads",
+    "productName": "Deck Threads",
+    "asar": true,
+    "npmRebuild": false,
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/trayTemplate.png",
+        "to": "trayTemplate.png"
+      },
+      {
+        "from": "build/trayTemplate@2x.png",
+        "to": "trayTemplate@2x.png"
+      }
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.utilities",
+      "minimumSystemVersion": "13.0",
+      "hardenedRuntime": false,
+      "icon": "build/icon.icns",
+      "identity": null,
+      "target": "dir"
+    }
+  }
+}

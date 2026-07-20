@@ -1,0 +1,42 @@
+appId: com.roie.deck-threads
+productName: Deck Threads
+artifactName: "Deck-Threads-${version}-${arch}.${ext}"
+asar: true
+npmRebuild: false
+forceCodeSigning: true
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+  - from: build/trayTemplate.png
+    to: trayTemplate.png
+  - from: build/trayTemplate@2x.png
+    to: trayTemplate@2x.png
+
+directories:
+  buildResources: build
+  output: release-production
+
+mac:
+  category: public.app-category.utilities
+  minimumSystemVersion: "13.0"
+  icon: build/icon.icns
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  notarize: true
+
+dmg:
+  sign: false
+  contents:
+    - x: 150
+      y: 180
+    - x: 450
+      y: 180
+      type: link
+      path: /Applications

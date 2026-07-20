@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <clipPath id="app-shape">
+      <rect x="26" y="26" width="972" height="972" rx="220"/>
+    </clipPath>
+  </defs>
+  <image href="icon-source.png" width="1024" height="1024" preserveAspectRatio="xMidYMid slice" clip-path="url(#app-shape)"/>
+</svg>

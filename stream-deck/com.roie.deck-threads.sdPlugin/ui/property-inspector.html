@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Deck Threads</title>
+    <link rel="stylesheet" href="property-inspector.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div class="mark" aria-hidden="true">
+          <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+        </div>
+        <div>
+          <h1>Deck Threads</h1>
+          <p>Live Codex Desktop tasks</p>
+        </div>
+      </header>
+
+      <section class="status-card" aria-live="polite">
+        <span id="status-dot" class="status-dot"></span>
+        <div>
+          <strong id="status-title">Checking companion…</strong>
+          <p id="status-detail">Looking for Deck Threads on this Mac.</p>
+        </div>
+      </section>
+
+      <button id="open-companion" type="button">Open companion</button>
+      <button id="check-again" class="secondary" type="button">Check again</button>
+      <button id="download-companion" class="secondary" type="button">Download companion</button>
+
+      <section class="help">
+        <h2>Required setup</h2>
+        <ol>
+          <li>Install and open the Deck Threads companion.</li>
+          <li>Keep Codex Desktop installed and running.</li>
+          <li>Use the bundled profile or place eight Task slot actions.</li>
+        </ol>
+        <p>All task data stays on this Mac.</p>
+      </section>
+    </main>
+    <script src="property-inspector.js"></script>
+  </body>
+</html>
