@@ -21,6 +21,10 @@ If another process is already using port `9876`, quit that process or the older 
 
 Open the Deck Threads window and compare the slot number and compact label with the physical key. If the wrong task still opens, quit Deck Threads, reopen it, and try again. Please include both labels—but no sensitive task content—in a support report.
 
+## Questions or needs-input tasks do not turn orange
+
+In the Stream Deck app, select one of the eight task keys. Its action must be **Deck Threads → Task slot**. Older development profiles may still use **Codex Threads → Codex task**; those actions do not support the orange question state. Replace each legacy action with **Deck Threads → Task slot** in the same position, then restart Stream Deck. The slot number is inferred from the key's position.
+
 ## The bundled profile is missing
 
 The bundled profile targets Stream Deck +. On another device, create a profile and manually drag **Deck Threads → Task slot** onto your keys. On Stream Deck +, reinstall the `.streamDeckPlugin` package and restart the Stream Deck app once.
