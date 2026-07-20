@@ -1,5 +1,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { _electron: electron } = require("playwright");
 
 async function layoutMetrics(page) {
@@ -23,17 +25,22 @@ async function captureWindow(application, outputPath) {
 }
 
 (async () => {
+  const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "deck-threads-qa-"));
   const application = await electron.launch({
     args: ["."],
     cwd: process.cwd(),
-    env: { ...process.env, CODEX_BRIDGE_API_DISABLED: "1" },
+    env: {
+      ...process.env,
+      CODEX_BRIDGE_API_DISABLED: "1",
+      DECK_THREADS_USER_DATA_DIR: userDataDir,
+    },
   });
 
   try {
     const page = await application.firstWindow();
     await page.waitForLoadState("domcontentloaded");
     await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
-    await page.waitForFunction(() => /Working|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
+    await page.waitForFunction(() => /Working|Question|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
 
     const title = await page.title();
     const taskSlots = page.locator(".task-key");
@@ -44,9 +51,21 @@ async function captureWindow(application, outputPath) {
 
     assert.equal(title, "Deck Threads");
     assert.equal(taskCount, 8);
-    assert.match(firstTaskLabel || "", /Working|Unread|Read/);
+    assert.match(firstTaskLabel || "", /Working|Question|Unread|Read/);
     assert.match(streamDeckStatus || "", /Online|Offline|Error/);
     assert.ok(await page.getByText("Attention signals", { exact: true }).isVisible());
+
+    const titleToggles = page.locator(".label-toggle input");
+    assert.equal(await titleToggles.count(), 6);
+    const questionRow = page.locator(".behavior-row").filter({ hasText: "Question" });
+    const questionToggle = questionRow.getByRole("checkbox");
+    assert.ok(await questionRow.isVisible());
+    assert.equal(await questionToggle.isChecked(), false);
+    await questionRow.locator("label").click();
+    assert.equal(await questionToggle.isChecked(), true);
+    await page.getByText("Stream Deck labels updated").waitFor();
+    const persistedSettings = JSON.parse(fs.readFileSync(path.join(userDataDir, "display-settings.json"), "utf8"));
+    assert.equal(persistedSettings.showThreadTitle.question, true);
 
     const invalidOpen = await page.evaluate(() => window.bridgeApi.openCodexThread("not-a-thread-id", "Invalid task"));
     assert.equal(invalidOpen.ok, false);
@@ -74,12 +93,14 @@ async function captureWindow(application, outputPath) {
       source,
       firstTaskLabel,
       streamDeckStatus,
+      questionTitleEnabled: await questionToggle.isChecked(),
       wideLayout,
       compactLayout,
       screenshots: ["/tmp/deck-threads-wide.png", "/tmp/deck-threads-compact.png"],
     }, null, 2)}\n`);
   } finally {
     await application.close();
+    fs.rmSync(userDataDir, { recursive: true, force: true });
   }
 })().catch((error) => {
   process.stderr.write(`${error.stack || error}\n`);

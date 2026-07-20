@@ -5,6 +5,7 @@ const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const { CodexAppServerClient } = require("./codex-app-server.cjs");
 const { readCodexTasks } = require("./codex-state.cjs");
+const { readDisplaySettings, writeDisplaySettings } = require("./display-settings.cjs");
 const { assignStableTaskSlots, readTaskSlotIds, writeTaskSlotIds } = require("./task-slots.cjs");
 
 const execFileAsync = promisify(execFile);
@@ -13,6 +14,10 @@ const BRIDGE_PORT = 9876;
 
 app.setName("Deck Threads");
 
+if (process.env.DECK_THREADS_USER_DATA_DIR) {
+  app.setPath("userData", process.env.DECK_THREADS_USER_DATA_DIR);
+}
+
 let mainWindow;
 let tray;
 let isQuitting = false;
@@ -20,6 +25,14 @@ let previousTaskStates = new Map();
 let stableTaskIds;
 let bridgeServer;
 const codexAppServer = new CodexAppServerClient();
+
+function displaySettingsPath() {
+  return path.join(app.getPath("userData"), "display-settings.json");
+}
+
+function getDisplaySettings() {
+  return readDisplaySettings(displaySettingsPath());
+}
 
 function getResourcePath(filename) {
   return app.isPackaged
@@ -220,6 +233,7 @@ function startBridgeServer() {
           scannedAt: new Date().toISOString(),
           source: state.source,
           tasks: state.tasks,
+          displaySettings: getDisplaySettings(),
         });
         return;
       }
@@ -334,6 +348,7 @@ async function getSnapshot() {
       state: "connected",
       detail: `Local task API is available at http://${BRIDGE_HOST}:${BRIDGE_PORT}.`,
     },
+    displaySettings: getDisplaySettings(),
   };
 }
 
@@ -342,6 +357,12 @@ ipcMain.handle("bridge:refresh", async () => {
   const snapshot = await getSnapshot();
   emitEvent("system", "info", "Task status refreshed", snapshot.scannedAt);
   return snapshot;
+});
+
+ipcMain.handle("bridge:set-display-settings", (_event, value) => {
+  const settings = writeDisplaySettings(displaySettingsPath(), value);
+  emitEvent("system", "success", "Stream Deck labels updated", "Key labels refresh automatically.");
+  return settings;
 });
 
 ipcMain.handle("bridge:open-codex-thread", async (_event, threadId, title) => {

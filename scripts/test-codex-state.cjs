@@ -8,8 +8,14 @@ const {
   abbreviateProjectName,
   prioritizeTasks,
   readCodexTasks,
+  readThreadStatus,
   readUnreadThreadIds,
 } = require("../electron/codex-state.cjs");
+const {
+  normalizeDisplaySettings,
+  readDisplaySettings,
+  writeDisplaySettings,
+} = require("../electron/display-settings.cjs");
 const { assignStableTaskSlots } = require("../electron/task-slots.cjs");
 
 const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "deck-threads-state-"));
@@ -71,6 +77,10 @@ try {
     INSERT INTO logs (ts, level, target, feedback_log_body, thread_id)
     VALUES (?, 'info', 'codex_core::session::turn', ?, ?)
   `);
+  const insertRuntimeLog = logsDb.prepare(`
+    INSERT INTO logs (ts, level, target, feedback_log_body, thread_id)
+    VALUES (?, 'info', ?, ?, ?)
+  `);
   const now = Math.floor(Date.now() / 1000);
   for (const [threadId, turnId] of [
     [unreadId, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
@@ -78,6 +88,33 @@ try {
   ]) {
     insertLog.run(now, `turn.id=${turnId} model_needs_follow_up=false`, threadId);
   }
+  const questionThreadId = "44444444-4444-4444-8444-444444444444";
+  const questionTurnId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+  insertLog.run(now, `turn.id=${questionTurnId} model_needs_follow_up=true`, questionThreadId);
+  insertRuntimeLog.run(
+    now,
+    "codex_core::stream_events_utils",
+    `turn.id=${questionTurnId} handle_output_item_done: ToolCall: request_user_input {}`,
+    questionThreadId,
+  );
+  assert.equal(readThreadStatus(logsDb, questionThreadId, now, new Set()).status, "question");
+  insertRuntimeLog.run(
+    now,
+    "codex_core::tools::parallel",
+    `turn.id=${questionTurnId} tool call completed tool_name=request_user_input `,
+    questionThreadId,
+  );
+  assert.equal(readThreadStatus(logsDb, questionThreadId, now, new Set()).status, "working");
+  const ordinaryToolThreadId = "55555555-5555-4555-8555-555555555555";
+  const ordinaryToolTurnId = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
+  insertLog.run(now, `turn.id=${ordinaryToolTurnId} model_needs_follow_up=true`, ordinaryToolThreadId);
+  insertRuntimeLog.run(
+    now,
+    "codex_core::stream_events_utils",
+    `turn.id=${ordinaryToolTurnId} handle_output_item_done: ToolCall: exec query LIKE '%ToolCall: request_user_input %'`,
+    ordinaryToolThreadId,
+  );
+  assert.equal(readThreadStatus(logsDb, ordinaryToolThreadId, now, new Set()).status, "working");
   logsDb.close();
 
   assert.deepEqual([...readUnreadThreadIds(temporaryRoot)], [unreadId]);
@@ -100,9 +137,10 @@ try {
     { id: "old", activityAt: priorityNow - ACTIVE_PRIORITY_WINDOW_MS - 2, pinned: false },
     { id: "pinned", activityAt: priorityNow - ACTIVE_PRIORITY_WINDOW_MS - 1, pinned: true },
     { id: "active", activityAt: priorityNow - 1, pinned: false },
+    { id: "question", status: "question", activityAt: priorityNow - 2, pinned: false },
   ], priorityNow);
-  assert.deepEqual(prioritized.map((task) => task.id), ["active", "pinned", "old"]);
-  assert.deepEqual(prioritized.map((task) => task.priority), ["active", "pinned", "recent"]);
+  assert.deepEqual(prioritized.map((task) => task.id), ["question", "active", "pinned", "old"]);
+  assert.deepEqual(prioritized.map((task) => task.priority), ["active", "active", "pinned", "recent"]);
   const initialSlots = assignStableTaskSlots([
     { id: "working-a", status: "working" },
     { id: "working-b", status: "working" },
@@ -121,7 +159,18 @@ try {
     { id: "new-working", status: "working" },
   ], ["working-a", null, "new-working"]);
   assert.deepEqual(sparseSlots.taskIds.slice(0, 3), ["working-a", null, "new-working"]);
-  process.stdout.write("Codex unread/read, project label, and pin mapping passed.\n");
+  const settingsPath = path.join(temporaryRoot, "display-settings.json");
+  assert.equal(readDisplaySettings(settingsPath).showThreadTitle.read, true);
+  assert.equal(readDisplaySettings(settingsPath).showThreadTitle.question, false);
+  const savedSettings = writeDisplaySettings(settingsPath, {
+    showThreadTitle: { question: true, read: false },
+  });
+  assert.equal(savedSettings.showThreadTitle.question, true);
+  assert.equal(savedSettings.showThreadTitle.read, false);
+  assert.equal(savedSettings.showThreadTitle.working, false);
+  assert.deepEqual(readDisplaySettings(settingsPath), savedSettings);
+  assert.equal(normalizeDisplaySettings({ showThreadTitle: { error: true } }).showThreadTitle.error, true);
+  process.stdout.write("Codex lifecycle, question detection, display settings, labels, pins, and stable slots passed.\n");
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
 }

@@ -89,13 +89,14 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     const task = companionClient.tasks[slot];
     const animatedFrame = task?.status === "unread"
       ? Math.floor(frame / 2)
-      : task?.status === "working"
+      : task?.status === "working" || task?.status === "question"
         ? frame
         : 0;
-    const signature = `${companionClient.online}:${task?.id}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${animatedFrame}`;
+    const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
+    const signature = `${companionClient.online}:${task?.id}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${animatedFrame}`;
     if (this.signatures.get(current.id) === signature) return;
     try {
-      const image = threadKey(task, slot, companionClient.online, frame);
+      const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle);
       await current.setImage(image, { target: Target.Hardware });
       await current.setImage(image, { target: Target.Software });
       await current.setTitle("", { target: Target.HardwareAndSoftware });

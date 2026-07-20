@@ -1,6 +1,6 @@
 const BASE_URL = "http://127.0.0.1:9876/v1";
 
-export type TaskStatus = "working" | "unread" | "read" | "waiting" | "error" | "off";
+export type TaskStatus = "working" | "question" | "unread" | "read" | "waiting" | "error" | "off";
 export type TaskPriority = "active" | "pinned" | "recent";
 
 export interface CodexTask {
@@ -23,12 +23,26 @@ export interface CodexTask {
 interface ThreadResponse {
   scannedAt: string;
   tasks: Array<CodexTask | null>;
+  displaySettings?: DisplaySettings;
 }
+
+type LabelStatus = Exclude<TaskStatus, "off">;
+type DisplaySettings = { showThreadTitle: Record<LabelStatus, boolean> };
+
+const DEFAULT_TITLE_VISIBILITY: Record<LabelStatus, boolean> = {
+  working: false,
+  question: false,
+  unread: false,
+  read: true,
+  waiting: false,
+  error: false,
+};
 
 class CompanionClient {
   tasks: Array<CodexTask | null> = [];
   online = false;
   scannedAt?: string;
+  displaySettings: DisplaySettings = { showThreadTitle: { ...DEFAULT_TITLE_VISIBILITY } };
   private refreshPromise?: Promise<void>;
 
   refresh(): Promise<void> {
@@ -46,11 +60,21 @@ class CompanionClient {
       const payload = (await response.json()) as ThreadResponse;
       this.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
       this.scannedAt = payload.scannedAt;
+      this.displaySettings = {
+        showThreadTitle: {
+          ...DEFAULT_TITLE_VISIBILITY,
+          ...(payload.displaySettings?.showThreadTitle || {}),
+        },
+      };
       this.online = true;
     } catch {
       this.online = false;
       this.tasks = [];
     }
+  }
+
+  showThreadTitle(status: TaskStatus) {
+    return status !== "off" && this.displaySettings.showThreadTitle[status];
   }
 
   async openThread(threadId: string) {

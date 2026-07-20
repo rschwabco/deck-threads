@@ -13,10 +13,11 @@ import {
   Warning,
   X,
 } from "@phosphor-icons/react";
-import type { CodexTaskStatus, EventEntry, HealthState, SystemSnapshot } from "./types";
+import type { CodexTaskStatus, EventEntry, HealthState, LabelConfigurableStatus, SystemSnapshot } from "./types";
 
 const STATUS_META: Record<CodexTaskStatus, { label: string; color: string; description: string }> = {
   working: { label: "Working", color: "#4169FF", description: "A calm cobalt flow while Codex is active." },
+  question: { label: "Question", color: "#FF6D00", description: "Bright orange when Codex is waiting for your answer." },
   unread: { label: "Unread", color: "#2ED47A", description: "A brighter green signal when work finishes." },
   read: { label: "Read", color: "#D9DEE8", description: "A quiet neutral key after you view the result." },
   waiting: { label: "Waiting", color: "#F5A742", description: "Amber when Codex needs your attention." },
@@ -29,6 +30,16 @@ const EMPTY_SNAPSHOT: SystemSnapshot = {
   codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", tasks: [] },
   streamDeck: { state: "missing", processCount: 0, pluginConnected: false, detail: "Looking for Stream Deck." },
   companion: { state: "connected", detail: "Starting the local task service." },
+  displaySettings: {
+    showThreadTitle: {
+      working: false,
+      question: false,
+      unread: false,
+      read: true,
+      waiting: false,
+      error: false,
+    },
+  },
 };
 
 function stateLabel(state: HealthState) {
@@ -138,9 +149,35 @@ export function App() {
 
   const taskCounts = useMemo(() => ({
     working: snapshot.codex.tasks.filter((task) => task?.status === "working").length,
+    question: snapshot.codex.tasks.filter((task) => task?.status === "question").length,
     unread: snapshot.codex.tasks.filter((task) => task?.status === "unread").length,
     pinned: snapshot.codex.tasks.filter((task) => task?.pinned).length,
   }), [snapshot.codex.tasks]);
+
+  const updateTitleVisibility = async (status: LabelConfigurableStatus, visible: boolean) => {
+    const nextSettings = {
+      showThreadTitle: {
+        ...snapshot.displaySettings.showThreadTitle,
+        [status]: visible,
+      },
+    };
+    setSnapshot((current) => ({ ...current, displaySettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setDisplaySettings(nextSettings);
+      setSnapshot((current) => ({ ...current, displaySettings: saved }));
+    } catch (error) {
+      const failure = {
+        id: `settings-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save label settings",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -203,6 +240,7 @@ export function App() {
 
         <section className="summary-strip" aria-label="Task summary">
           <div><strong>{taskCounts.working}</strong><span>working</span></div>
+          <div><strong>{taskCounts.question}</strong><span>questions</span></div>
           <div><strong>{taskCounts.unread}</strong><span>unread</span></div>
           <div><strong>{taskCounts.pinned}</strong><span>pinned</span></div>
           <p>{snapshot.codex.source}</p>
@@ -280,6 +318,15 @@ export function App() {
                 <div className="behavior-row" key={status}>
                   <span className={`behavior-swatch swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
                   <div><strong>{STATUS_META[status].label}</strong><p>{STATUS_META[status].description}</p></div>
+                  <label className="label-toggle">
+                    <input
+                      type="checkbox"
+                      checked={snapshot.displaySettings.showThreadTitle[status]}
+                      onChange={(event) => void updateTitleVisibility(status, event.currentTarget.checked)}
+                    />
+                    <span aria-hidden="true" />
+                    Show title
+                  </label>
                 </div>
               ))}
             </div>

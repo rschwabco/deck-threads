@@ -10,7 +10,7 @@ const taskKeys = [
   ["MP1", "working", ""],
   ["DS2", "unread", ""],
   ["API1", "read", "◆"],
-  ["WB3", "waiting", ""],
+  ["WB3", "question", ""],
   ["UX1", "read", ""],
   ["RL2", "error", "◆"],
   ["QA1", "read", ""],
@@ -42,6 +42,7 @@ const baseStyles = `
   .key.unread::after { width: 108px; height: 108px; opacity: .55; }
   .key.unread strong { z-index: 1; }
   .key.read { background: linear-gradient(145deg, #333b49, #1b202a); }
+  .key.question { background: linear-gradient(145deg, #ff8a1f, #db3f00); }
   .key.waiting { background: linear-gradient(145deg, #e9a445, #774917); }
   .key.error { background: linear-gradient(145deg, #ff687b, #8e2133); }
   .footer { position: absolute; left: 96px; right: 96px; bottom: 58px; display: flex; justify-content: space-between; align-items: center; color: #717a89; font-size: 18px; }
@@ -89,11 +90,11 @@ const pages = [
     <div class="frame">
       <div class="eyebrow">Attention without noise</div>
       <h2>Know what needs you.</h2>
-      <p class="lede">Subtle motion for active work. A stronger full-color signal when finished work is waiting to be read.</p>
+      <p class="lede">Subtle motion for active work. A bright orange signal when Codex asks a question. Strong color when finished work is unread.</p>
       <div class="signal-row">
         <div><div class="key working"><strong>DT1</strong></div><b>Working</b><span>Calm flow</span></div>
+        <div><div class="key question"><strong>QA2</strong></div><b>Question</b><span>Needs your answer</span></div>
         <div><div class="key unread"><strong>MP1</strong></div><b>Unread</b><span>Needs attention</span></div>
-        <div><div class="key waiting"><strong>QA2</strong></div><b>Waiting</b><span>Needs input</span></div>
         <div><div class="key error"><strong>API1</strong></div><b>Error</b><span>Cannot continue</span></div>
       </div>
       <div class="footer"><span class="brandline">${mark()} Deck Threads</span><span>Color and motion at a glance</span></div>

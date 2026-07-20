@@ -9,7 +9,7 @@ export interface EventEntry {
   detail?: string;
 }
 
-export type CodexTaskStatus = "working" | "unread" | "read" | "waiting" | "error" | "off";
+export type CodexTaskStatus = "working" | "question" | "unread" | "read" | "waiting" | "error" | "off";
 export type CodexTaskPriority = "active" | "pinned" | "recent";
 
 export interface CodexTask {
@@ -51,11 +51,19 @@ export interface SystemSnapshot {
     state: HealthState;
     detail: string;
   };
+  displaySettings: DisplaySettings;
+}
+
+export type LabelConfigurableStatus = Exclude<CodexTaskStatus, "off">;
+
+export interface DisplaySettings {
+  showThreadTitle: Record<LabelConfigurableStatus, boolean>;
 }
 
 export interface BridgeApi {
   getSnapshot(): Promise<SystemSnapshot>;
   refresh(): Promise<SystemSnapshot>;
+  setDisplaySettings(value: DisplaySettings): Promise<DisplaySettings>;
   openCodexThread(threadId: string, title: string): Promise<{ ok: boolean; message: string; deepLink?: string }>;
   onEvent(callback: (event: EventEntry) => void): () => void;
 }

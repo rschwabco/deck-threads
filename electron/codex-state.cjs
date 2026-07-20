@@ -8,9 +8,10 @@ const ACTIVE_PRIORITY_WINDOW_MS = 6 * 60 * 60 * 1000;
 
 const STATUS_COLORS = {
   working: "#304FFE",
+  question: "#FF6D00",
   unread: "#00FF4C",
   read: "#FFFFFF",
-  waiting: "#FF6D00",
+  waiting: "#F5A742",
   error: "#FF0033",
   off: "#000000",
 };
@@ -48,6 +49,22 @@ function cleanTitle(value) {
 
 function extractTurnId(body) {
   return String(body || "").match(/turn\.id=([0-9a-f-]{36})/)?.[1];
+}
+
+function extractRequestedToolName(body) {
+  const text = String(body || "");
+  const marker = "handle_output_item_done: ToolCall: ";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return undefined;
+  return text.slice(markerIndex + marker.length).match(/^([^\s]+)/)?.[1];
+}
+
+function extractCompletedToolName(body) {
+  const text = String(body || "");
+  const marker = "tool call completed";
+  const markerIndex = text.indexOf(marker);
+  if (markerIndex < 0) return undefined;
+  return text.slice(markerIndex + marker.length).match(/\btool_name=([^\s]+)/)?.[1];
 }
 
 function readGlobalState(codexHome = path.join(os.homedir(), ".codex")) {
@@ -114,8 +131,8 @@ function prioritizeTasks(tasks, nowMs = Date.now(), limit = 8) {
     }))
     .sort((left, right) => {
       const rank = { active: 0, pinned: 1, recent: 2 };
-      const workingRank = { working: 0 };
-      return (workingRank[left.status] ?? 1) - (workingRank[right.status] ?? 1)
+      const attentionRank = { question: 0, working: 1 };
+      return (attentionRank[left.status] ?? 2) - (attentionRank[right.status] ?? 2)
         || rank[left.priority] - rank[right.priority]
         || right.activityAt - left.activityAt;
     })
@@ -166,6 +183,38 @@ function readThreadStatus(logsDb, threadId, nowSeconds, unreadThreadIds) {
       updatedAt: completed.ts * 1000,
       turnId,
     };
+  }
+
+  const pendingQuestion = logsDb.prepare(`
+    SELECT id, ts, feedback_log_body AS body
+    FROM logs
+    WHERE thread_id = ?
+      AND target = 'codex_core::stream_events_utils'
+      AND feedback_log_body LIKE ?
+      AND feedback_log_body LIKE '%handle_output_item_done: ToolCall:%'
+    ORDER BY id DESC
+  `).all(threadId, `%turn.id=${turnId}%`)
+    .find((row) => extractRequestedToolName(row.body) === "request_user_input");
+
+  if (pendingQuestion) {
+    const questionCompleted = logsDb.prepare(`
+      SELECT id, feedback_log_body AS body
+      FROM logs
+      WHERE thread_id = ?
+        AND id > ?
+        AND feedback_log_body LIKE ?
+        AND feedback_log_body LIKE '%tool call completed%'
+      ORDER BY id ASC
+    `).all(threadId, pendingQuestion.id, `%turn.id=${turnId}%`)
+      .find((row) => extractCompletedToolName(row.body) === "request_user_input");
+
+    if (!questionCompleted) {
+      return {
+        status: "question",
+        updatedAt: pendingQuestion.ts * 1000,
+        turnId,
+      };
+    }
   }
 
   if (nowSeconds - latestTurnRow.ts <= ACTIVE_WINDOW_SECONDS) {
@@ -271,5 +320,6 @@ module.exports = {
   abbreviateProjectName,
   prioritizeTasks,
   readCodexTasks,
+  readThreadStatus,
   readUnreadThreadIds,
 };

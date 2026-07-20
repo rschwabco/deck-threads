@@ -12,7 +12,9 @@ Deck Threads is an independent, open-source utility. It is not affiliated with o
 - Gives recently active tasks priority, followed by tasks from pinned projects.
 - Keeps active tasks in stable physical slots, including across companion restarts.
 - Uses compact project-local labels such as `DT1` and `MP2`.
-- Distinguishes working, unread, read, waiting, and error states with full-key color and motion.
+- Turns a key orange when Codex asks a question and is waiting for your answer.
+- Distinguishes working, question, unread, read, waiting, and error states with full-key color and motion.
+- Lets you choose, per state, whether Stream Deck keys show the full task title or only the compact project label.
 - Opens the exact Codex task when its key is pressed.
 - Runs locally in the macOS menu bar and starts automatically at login.
 - Keeps task data on your Mac; the companion only listens on `127.0.0.1`.
