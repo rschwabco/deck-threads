@@ -2,7 +2,7 @@
 
 Deck Threads puts your live Codex Desktop tasks on Stream Deck. Eight keys show the work that matters now, hold their physical positions while a task remains selected, and open the exact task in Codex with one press.
 
-![Deck Threads icon](build/icon.png)
+![Deck Threads showing eight live Codex Desktop tasks on Stream Deck](docs/images/hero.png)
 
 Deck Threads is an independent, open-source utility. It is not affiliated with or endorsed by OpenAI or Elgato.
 

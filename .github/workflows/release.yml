@@ -68,4 +68,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${GITHUB_REF_NAME}" release-submission/* --verify-tag --generate-notes --title "Deck Threads ${GITHUB_REF_NAME#v}"
+        run: |
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" release-submission/* --clobber
+            gh release edit "${GITHUB_REF_NAME}" --verify-tag --draft=false --prerelease=false --latest --title "Deck Threads ${GITHUB_REF_NAME#v}" --notes-file CHANGELOG.md
+          else
+            gh release create "${GITHUB_REF_NAME}" release-submission/* --verify-tag --latest --title "Deck Threads ${GITHUB_REF_NAME#v}" --notes-file CHANGELOG.md
+          fi
