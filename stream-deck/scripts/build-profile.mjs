@@ -14,6 +14,7 @@ const profileRoot = path.join(temporaryRoot, profileName);
 // These values mirror the layout emitted by Elgato's official profile samples.
 const mainPage = "6VNA6HBI4T10LFWGJ26HM1DEL8Z";
 const blankPage = "ELB0ST0NB56F937RI7BJHE86OGZ";
+const archiveTimestamp = new Date("2020-01-01T00:00:00.000Z");
 
 const state = {
   FontFamily: "",
@@ -36,6 +37,16 @@ function actionEntry({ actionId, name, settings, uuid }) {
     States: [state],
     UUID: uuid,
   };
+}
+
+function normalizeTimestamps(directory) {
+  const entries = fs.readdirSync(directory, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) normalizeTimestamps(entryPath);
+    fs.utimesSync(entryPath, archiveTimestamp, archiveTimestamp);
+  }
+  fs.utimesSync(directory, archiveTimestamp, archiveTimestamp);
 }
 
 const actions = {};
@@ -78,8 +89,9 @@ try {
     Name: "",
   }));
 
+  normalizeTimestamps(profileRoot);
   fs.rmSync(outputPath, { force: true });
-  execFileSync("zip", ["-qr", outputPath, profileName], { cwd: temporaryRoot });
+  execFileSync("zip", ["-Xqr", outputPath, profileName], { cwd: temporaryRoot });
   process.stdout.write(`Built ${outputPath}\n`);
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
