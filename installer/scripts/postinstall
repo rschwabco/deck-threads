@@ -1,0 +1,108 @@
+#!/bin/bash
+set -euo pipefail
+
+install_root="${DECK_THREADS_INSTALL_ROOT:-}"
+plugin_source="$install_root/Library/Application Support/Deck Threads/Installer/com.roie.deck-threads.sdPlugin"
+
+console_user="${DECK_THREADS_INSTALL_USER:-$(/usr/bin/stat -f '%Su' /dev/console)}"
+if [[ -z "$console_user" || "$console_user" == "root" || "$console_user" == "loginwindow" ]]; then
+  echo "Deck Threads requires an active macOS user to finish installation." >&2
+  exit 1
+fi
+
+console_uid="$(/usr/bin/id -u "$console_user")"
+console_group="$(/usr/bin/id -gn "$console_user")"
+user_home="${DECK_THREADS_INSTALL_HOME:-$(/usr/bin/dscl . -read "/Users/$console_user" NFSHomeDirectory | /usr/bin/awk '{print $2}')}"
+if [[ -z "$user_home" || ! -d "$user_home" ]]; then
+  echo "Could not resolve the home directory for $console_user." >&2
+  exit 1
+fi
+
+read_plugin_version() {
+  /usr/bin/plutil -extract Version raw "$1/manifest.json" 2>/dev/null || true
+}
+
+valid_plugin_version() {
+  [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+}
+
+compare_plugin_versions() {
+  local left="$1"
+  local right="$2"
+  local left_parts=()
+  local right_parts=()
+  local index
+  IFS='.' read -r -a left_parts <<<"$left"
+  IFS='.' read -r -a right_parts <<<"$right"
+  for index in 0 1 2 3; do
+    if (( 10#${left_parts[$index]} > 10#${right_parts[$index]} )); then
+      echo 1
+      return
+    fi
+    if (( 10#${left_parts[$index]} < 10#${right_parts[$index]} )); then
+      echo -1
+      return
+    fi
+  done
+  echo 0
+}
+
+plugin_changed=0
+if [[ -d "$plugin_source" ]]; then
+  plugins_root="$user_home/Library/Application Support/com.elgato.StreamDeck/Plugins"
+  plugin_destination="$plugins_root/com.roie.deck-threads.sdPlugin"
+  staged_plugin="$plugins_root/.com.roie.deck-threads.sdPlugin.installing.$$"
+  backup_plugin="$plugins_root/.com.roie.deck-threads.sdPlugin.backup.$$"
+  source_version="$(read_plugin_version "$plugin_source")"
+
+  if ! valid_plugin_version "$source_version"; then
+    echo "The bundled Stream Deck plugin version is invalid: ${source_version:-missing}." >&2
+    exit 1
+  fi
+
+  install_plugin=1
+  if [[ -d "$plugin_destination" ]]; then
+    destination_version="$(read_plugin_version "$plugin_destination")"
+    if valid_plugin_version "$destination_version"; then
+      comparison="$(compare_plugin_versions "$source_version" "$destination_version")"
+      if [[ "$comparison" != "1" ]]; then
+        install_plugin=0
+        echo "Keeping Stream Deck plugin $destination_version; bundled version is $source_version."
+      fi
+    fi
+  fi
+
+  if [[ "$install_plugin" == "1" ]]; then
+    /bin/mkdir -p "$plugins_root"
+    /bin/rm -rf "$staged_plugin" "$backup_plugin"
+    /usr/bin/ditto "$plugin_source" "$staged_plugin"
+    /usr/sbin/chown -R "$console_user:$console_group" "$staged_plugin"
+
+    rollback_plugin() {
+      /bin/rm -rf "$staged_plugin"
+      if [[ ! -e "$plugin_destination" && -e "$backup_plugin" ]]; then
+        /bin/mv "$backup_plugin" "$plugin_destination" || true
+      fi
+    }
+    trap rollback_plugin EXIT HUP INT TERM
+    if [[ -e "$plugin_destination" ]]; then
+      /bin/mv "$plugin_destination" "$backup_plugin"
+    fi
+    /bin/mv "$staged_plugin" "$plugin_destination"
+    /bin/rm -rf "$backup_plugin"
+    trap - EXIT HUP INT TERM
+    plugin_changed=1
+    echo "Installed Stream Deck plugin $source_version for $console_user."
+  fi
+
+  if [[ "$plugin_changed" == "1" && "${DECK_THREADS_SKIP_LAUNCH:-0}" != "1" && -d "/Applications/Elgato Stream Deck.app" ]]; then
+    /usr/bin/pkill -x "Stream Deck" >/dev/null 2>&1 || true
+    /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" /usr/bin/open -a "/Applications/Elgato Stream Deck.app" || true
+  fi
+fi
+
+if [[ "${DECK_THREADS_SKIP_LAUNCH:-0}" != "1" ]]; then
+  /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" /usr/bin/open -a "/Applications/Deck Threads.app" || true
+fi
+
+exit 0

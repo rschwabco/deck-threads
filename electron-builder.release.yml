@@ -4,6 +4,12 @@ artifactName: "Deck-Threads-${version}-${arch}.${ext}"
 asar: true
 npmRebuild: false
 forceCodeSigning: true
+electronUpdaterCompatibility: ">=2.16"
+
+publish:
+  - provider: github
+    owner: rschwabco
+    repo: deck-threads
 
 files:
   - dist/**/*
@@ -35,10 +41,13 @@ mac:
 
 dmg:
   sign: false
+  background: build/dmg-background.png
+  iconSize: 112
+  iconTextSize: 13
   contents:
     - x: 150
-      y: 180
-    - x: 450
-      y: 180
+      y: 244
+    - x: 510
+      y: 244
       type: link
       path: /Applications

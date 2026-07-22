@@ -13,23 +13,18 @@ You need:
 
 Deck Threads supports Apple silicon and Intel Macs through one universal app build.
 
-## 1. Install the companion
+## 1. Choose an installer
 
 1. Go to the [latest GitHub release](https://github.com/rschwabco/deck-threads/releases/latest).
-2. Download the universal `.dmg` file.
-3. Open the disk image.
-4. Drag **Deck Threads** into the **Applications** folder.
-5. Eject the Deck Threads disk image.
-6. Open **Deck Threads** from Applications.
+2. Download `Deck-Threads-Installer.pkg` to install the companion and Stream Deck plugin together.
+3. If your plugin is already managed through Stream Deck Marketplace, download `Deck-Threads-Companion.pkg` instead.
+4. Open the package and complete the macOS Installer steps.
 
-The companion opens a status window, adds an eight-slot icon to the macOS menu bar, and enables **Open at Login**. Closing its window leaves the companion running; choose **Quit Deck Threads** from the menu-bar item to stop it.
+Both packages install and open the companion in `/Applications`. It adds an eight-slot icon to the macOS menu bar and enables **Open at Login**. Closing its window leaves the companion running; choose **Quit Deck Threads** from the menu-bar item to stop it.
 
-## 2. Install the Stream Deck plugin
+## 2. Confirm Stream Deck
 
-1. From the same GitHub release, download `com.roie.deck-threads.streamDeckPlugin`.
-2. Double-click the downloaded file.
-3. Confirm installation in the Stream Deck app.
-4. If Stream Deck does not refresh automatically, quit and reopen it once.
+The complete installer adds the plugin for the active Mac user and restarts Stream Deck when it is installed. The companion-only installer does not add or replace a plugin.
 
 The plugin includes a 4 × 2 profile for Stream Deck +. It also adds **Deck Threads → Task slot** to the actions list.
 
@@ -88,10 +83,11 @@ Deck Threads enables launch at login the first time the packaged app starts. You
 
 ## Updating
 
-1. Quit Deck Threads from its menu-bar item.
-2. Download the newer release.
-3. Replace the existing app in Applications.
-4. Double-click the newer `.streamDeckPlugin` file and approve replacement if the release includes one.
+Deck Threads checks for updates shortly after launch and every six hours while it is running. You can also choose **Deck Threads → Check for Updates...** from the application menu.
+
+When the sidebar reports that an update is available, choose **Update now** once. Deck Threads shows download progress, installs the signed update, and reopens automatically. Complete installations also update an existing bundled Stream Deck plugin and restart Stream Deck only when that plugin changes. Companion-only installations do not add a missing plugin.
+
+The first updater-enabled Developer ID build must be installed manually over older beta or ad-hoc-signed copies. In-app updating is available after that one-time installation.
 
 Your stable slot assignments and source allocation are stored in the app's local data folder and survive normal updates.
 

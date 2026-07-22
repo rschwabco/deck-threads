@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.0.1-beta.2 — 2026-07-22
+
+- Added signed in-app updates from public GitHub Releases with a single Update now action, download progress, automatic restart, stable and prerelease channels, and retry handling.
+- Added safe bundled Stream Deck plugin synchronization with version ordering, companion-only opt-out, atomic replacement, and rollback.
+- Added immutable draft-release publishing and verification for updater metadata, ZIP hashes, embedded provider configuration, and Apple Team identity.
+
 ## 1.0.1 — 2026-07-22
 
 - Added local Claude Code task monitoring alongside Codex, including sidebar titles, pinned tasks, archived-task filtering, lifecycle status, and reliable desktop task switching.

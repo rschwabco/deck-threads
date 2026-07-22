@@ -36,6 +36,7 @@ async function captureWindow(application, outputPath) {
     appearance: path.join(outputDir, "deck-threads-appearance.png"),
     labels: path.join(outputDir, "deck-threads-key-labels.png"),
     compact: path.join(outputDir, "deck-threads-compact.png"),
+    updateError: path.join(outputDir, "deck-threads-update-error.png"),
   };
   const application = await electron.launch({
     args: ["."],
@@ -44,6 +45,7 @@ async function captureWindow(application, outputPath) {
       ...process.env,
       DECK_THREADS_BRIDGE_PORT: String(bridgePort),
       DECK_THREADS_USER_DATA_DIR: userDataDir,
+      DECK_THREADS_UPDATE_FIXTURE: "download-error-once",
     },
   });
 
@@ -52,6 +54,9 @@ async function captureWindow(application, outputPath) {
     await page.waitForLoadState("domcontentloaded");
     await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
     await page.waitForFunction(() => /Working|Question|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
+    const updateButton = page.getByRole("button", { name: "Update now" });
+    await updateButton.waitFor();
+    assert.match((await page.locator(".update-card").textContent()) || "", /Version 1\.0\.2 is ready/);
 
     const healthResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/health`);
     assert.equal(healthResponse.ok, true);
@@ -246,6 +251,19 @@ async function captureWindow(application, outputPath) {
     assert.ok(compactLayout.documentScrollWidth <= compactLayout.documentClientWidth, `Compact document overflow: ${JSON.stringify(compactLayout)}`);
     await captureWindow(application, screenshots.compact);
 
+    await updateButton.click();
+    await page.locator(".update-progress").waitFor();
+    assert.equal(await page.locator(".update-progress").getAttribute("role"), "progressbar");
+    await page.getByText("Update needs attention", { exact: true }).waitFor();
+    const retryUpdate = page.getByRole("button", { name: "Try again" });
+    assert.ok(await retryUpdate.isVisible());
+    await captureWindow(application, screenshots.updateError);
+    await retryUpdate.click();
+    await page.getByText("Restarting Deck Threads", { exact: true }).waitFor();
+    const updateState = await page.evaluate(() => window.bridgeApi.getUpdateState());
+    assert.equal(updateState.status, "installing");
+    assert.equal(updateState.availableVersion, "1.0.2");
+
     process.stdout.write(`${JSON.stringify({
       title,
       source,
@@ -258,6 +276,7 @@ async function captureWindow(application, outputPath) {
       typography: persistedAppearance.typography,
       wideLayout,
       compactLayout,
+      updateState,
       screenshots: Object.values(screenshots),
     }, null, 2)}\n`);
   } finally {

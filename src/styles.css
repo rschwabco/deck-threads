@@ -63,12 +63,14 @@ input:focus-visible {
   border-right: 1px solid var(--line-soft);
   background: rgb(15 21 31 / 0.94);
   backdrop-filter: blur(20px);
+  overflow-y: auto;
   -webkit-app-region: drag;
 }
 
 .brand-block,
 .sidebar nav,
-.sidebar-note { -webkit-app-region: no-drag; }
+.sidebar-note,
+.sidebar-status-stack { -webkit-app-region: no-drag; }
 
 .brand-block {
   display: flex;
@@ -107,6 +109,8 @@ input:focus-visible {
 .brand-subtitle,
 .sidebar-note p,
 .sidebar-note span,
+.update-card p,
+.update-card-copy,
 .health-item p,
 .panel-heading p,
 .empty-state p,
@@ -144,8 +148,14 @@ input:focus-visible {
 .nav-item svg { width: 17px; height: 17px; }
 .nav-active { background: rgb(65 105 255 / 0.13); color: #a8baff; }
 
-.sidebar-note {
+.sidebar-status-stack {
   margin-top: auto;
+  display: grid;
+  gap: 10px;
+  padding-top: 16px;
+}
+
+.sidebar-note {
   padding: 15px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
@@ -163,6 +173,77 @@ input:focus-visible {
 
 .sidebar-note strong { display: block; margin-top: 8px; font-size: 12px; }
 .sidebar-note span { display: block; margin-top: 6px; color: var(--quiet); font-size: 11px; line-height: 1.45; }
+
+.update-card {
+  padding: 13px;
+  border: 1px solid rgb(90 119 235 / 0.48);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, rgb(35 49 81 / 0.96), rgb(19 27 42 / 0.98));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.update-card.update-error { border-color: rgb(255 92 112 / 0.46); }
+.update-card.update-up-to-date { border-color: rgb(46 212 122 / 0.34); }
+.update-card-heading { display: flex; align-items: flex-start; gap: 10px; }
+.update-card-heading > div { min-width: 0; }
+.update-card-heading p {
+  color: var(--quiet);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.update-card-heading strong { display: block; margin-top: 4px; color: var(--text); font-size: 11px; line-height: 1.35; }
+.update-card-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  background: rgb(65 105 255 / 0.16);
+  color: var(--accent-soft);
+}
+.update-error .update-card-icon { background: rgb(255 92 112 / 0.12); color: #ff8998; }
+.update-up-to-date .update-card-icon { background: rgb(46 212 122 / 0.12); color: var(--success); }
+.update-card-icon svg { width: 14px; height: 14px; }
+.update-card-copy { display: block; margin-top: 8px; color: var(--muted); font-size: 10px; line-height: 1.45; }
+.update-progress {
+  height: 4px;
+  margin-top: 10px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(119 131 151 / 0.2);
+}
+.update-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent-soft);
+  transition: width 180ms ease;
+}
+.update-action {
+  display: inline-flex;
+  width: 100%;
+  min-height: 34px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 11px;
+  border-radius: var(--radius-small);
+  background: #3354cc;
+  color: #f8faff;
+  font-size: 11px;
+  font-weight: 680;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 160ms ease, transform 120ms ease, opacity 160ms ease;
+}
+.update-action:hover:not(:disabled) { background: #3b5bd6; }
+.update-action:active:not(:disabled) { transform: translateY(1px); }
+.update-action:disabled { opacity: 0.55; cursor: not-allowed; }
+.update-action svg { width: 14px; height: 14px; }
 
 .main-content {
   grid-column: 2;

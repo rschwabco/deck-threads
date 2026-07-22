@@ -4,6 +4,8 @@ const path = require("node:path");
 const http = require("node:http");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const electronUpdater = require("electron-updater");
+const { AppUpdateController, createFixtureUpdater } = require("./app-updater.cjs");
 const { CodexAppServerClient } = require("./codex-app-server.cjs");
 const { ClaudeTaskClient } = require("./claude-state.cjs");
 const { readCodexTasks } = require("./codex-state.cjs");
@@ -37,6 +39,8 @@ let isQuitting = false;
 let previousTaskStates = new Map();
 let stableTaskIds;
 let bridgeServer;
+let updateController;
+let shutdownStarted = false;
 const codexAppServer = new CodexAppServerClient();
 const claudeTaskClient = new ClaudeTaskClient();
 
@@ -71,9 +75,9 @@ async function ensureBundledStreamDeckPlugin() {
   const pluginsRoot = process.env.DECK_THREADS_STREAM_DECK_PLUGINS_DIR
     || path.join(app.getPath("home"), "Library", "Application Support", "com.elgato.StreamDeck", "Plugins");
   const destination = path.join(pluginsRoot, STREAM_DECK_PLUGIN_BUNDLE);
-  const result = await installBundledStreamDeckPlugin(source, destination);
+  const result = await installBundledStreamDeckPlugin(source, destination, { installIfMissing: false });
 
-  if (result.status === "installed"
+  if (["installed", "updated"].includes(result.status)
     && process.env.DECK_THREADS_SKIP_STREAM_DECK_RESTART !== "1"
     && fs.existsSync("/Applications/Elgato Stream Deck.app")) {
     await execFileAsync("/usr/bin/pkill", ["-x", "Stream Deck"]).catch(() => undefined);
@@ -108,14 +112,45 @@ function showMainWindow() {
   mainWindow.focus();
 }
 
-function createTray() {
-  const trayImage = nativeImage.createFromPath(getResourcePath("trayTemplate.png"));
-  trayImage.setTemplateImage(true);
-  tray = new Tray(trayImage);
-  tray.setToolTip("Deck Threads");
+function currentUpdateState() {
+  return updateController?.getState() || {
+    status: "disabled",
+    currentVersion: app.getVersion(),
+    message: "Updates are available in the installed macOS app.",
+  };
+}
+
+function updateMenuItem(state) {
+  if (state.status === "available") {
+    return {
+      label: `Update now (${state.availableVersion || "latest"})...`,
+      click: () => {
+        showMainWindow();
+        void updateController?.startUpdate();
+      },
+    };
+  }
+  if (state.status === "downloading") {
+    const progress = Number.isFinite(state.progress) ? ` ${Math.round(state.progress)}%` : "";
+    return { label: `Downloading update${progress}`, enabled: false };
+  }
+  if (state.status === "installing") {
+    return { label: "Installing update...", enabled: false };
+  }
+  if (state.status === "error" && state.availableVersion) {
+    return { label: "Update needs attention...", click: showMainWindow };
+  }
+  return null;
+}
+
+function refreshTrayMenu() {
+  if (!tray || tray.isDestroyed()) return;
+  const state = currentUpdateState();
+  const updateItem = updateMenuItem(state);
+  tray.setToolTip(updateItem ? "Deck Threads - Update available" : "Deck Threads");
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: "Open Deck Threads", click: showMainWindow },
-    { type: "separator" },
+    ...(updateItem ? [updateItem, { type: "separator" }] : [{ type: "separator" }]),
     {
       label: "Starts Automatically at Login",
       type: "checkbox",
@@ -132,15 +167,33 @@ function createTray() {
       },
     },
   ]));
+}
+
+function createTray() {
+  const trayImage = nativeImage.createFromPath(getResourcePath("trayTemplate.png"));
+  trayImage.setTemplateImage(true);
+  tray = new Tray(trayImage);
+  refreshTrayMenu();
   tray.on("double-click", showMainWindow);
 }
 
 function createApplicationMenu() {
+  const updateState = currentUpdateState();
+  const updateBusy = ["checking", "downloading", "installing"].includes(updateState.status);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     {
       label: "Deck Threads",
       submenu: [
         { label: "Open Deck Threads", accelerator: "CmdOrCtrl+Shift+K", click: showMainWindow },
+        { type: "separator" },
+        {
+          label: updateState.status === "checking" ? "Checking for Updates..." : "Check for Updates...",
+          enabled: updateState.status !== "disabled" && !updateBusy,
+          click: () => {
+            showMainWindow();
+            void updateController?.checkForUpdates({ manual: true });
+          },
+        },
         { type: "separator" },
         { role: "hide" },
         { role: "hideOthers" },
@@ -260,6 +313,41 @@ function emitEvent(source, level, message, detail) {
     detail,
   };
   mainWindow?.webContents.send("bridge:event", event);
+}
+
+function shutdownAppServices() {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  isQuitting = true;
+  bridgeServer?.close();
+  codexAppServer.close();
+}
+
+function publishUpdateState(state) {
+  mainWindow?.webContents.send("updates:state", state);
+  refreshTrayMenu();
+  if (app.isReady()) createApplicationMenu();
+}
+
+function initializeUpdateController() {
+  const fixtureMode = !app.isPackaged ? process.env.DECK_THREADS_UPDATE_FIXTURE : undefined;
+  const enabled = process.platform === "darwin" && (app.isPackaged || Boolean(fixtureMode));
+  const updater = fixtureMode ? createFixtureUpdater(fixtureMode) : electronUpdater.autoUpdater;
+  updateController = new AppUpdateController({
+    app,
+    updater,
+    enabled,
+    beforeInstall: shutdownAppServices,
+    onStateChange: publishUpdateState,
+    onActivity: ({ level, message, detail }) => emitEvent("system", level, message, detail),
+  });
+  updateController.initialize();
+  if (fixtureMode) {
+    const fixtureTimer = setTimeout(() => void updateController.checkForUpdates({ manual: false }), 250);
+    fixtureTimer.unref?.();
+  } else {
+    updateController.startScheduling();
+  }
 }
 
 async function openTask(sourceId, threadId, title) {
@@ -449,6 +537,9 @@ async function getSnapshot() {
 }
 
 ipcMain.handle("bridge:get-snapshot", getSnapshot);
+ipcMain.handle("updates:get-state", () => currentUpdateState());
+ipcMain.handle("updates:check", () => updateController?.checkForUpdates({ manual: true }) || currentUpdateState());
+ipcMain.handle("updates:start", () => updateController?.startUpdate() || currentUpdateState());
 ipcMain.handle("bridge:refresh", async () => {
   const snapshot = await getSnapshot();
   emitEvent("system", "info", "Task status refreshed", snapshot.scannedAt);
@@ -499,22 +590,23 @@ app.on("second-instance", showMainWindow);
 
 app.whenReady().then(() => {
   ensureLaunchAtLogin();
+  initializeUpdateController();
   createTray();
   createApplicationMenu();
   app.dock?.setIcon(getResourcePath("icon.png"));
   const openedAtLogin = app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin;
   if (openedAtLogin) app.dock?.hide();
   else showMainWindow();
+  if (process.env.CODEX_BRIDGE_API_DISABLED !== "1") startBridgeServer();
   ensureBundledStreamDeckPlugin()
     .then((result) => {
-      if (result.status === "installed") {
-        emitEvent("system", "success", "Stream Deck plugin installed", `Version ${result.version || "current"} is ready.`);
+      if (["installed", "updated"].includes(result.status)) {
+        emitEvent("system", "success", "Stream Deck plugin updated", `Version ${result.version || "current"} is ready.`);
       }
     })
     .catch((error) => {
       emitEvent("system", "warning", "Could not install the Stream Deck plugin", error.message);
     });
-  if (process.env.CODEX_BRIDGE_API_DISABLED !== "1") startBridgeServer();
   app.on("activate", showMainWindow);
 });
 
@@ -522,8 +614,12 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit-for-update", () => {
   isQuitting = true;
-  bridgeServer?.close();
-  codexAppServer.close();
+  shutdownAppServices();
+});
+
+app.on("before-quit", () => {
+  shutdownAppServices();
+  updateController?.dispose();
 });

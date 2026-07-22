@@ -5,6 +5,7 @@ import {
   Check,
   CircleNotch,
   Command,
+  DownloadSimple,
   Monitor,
   Palette,
   Plug,
@@ -27,6 +28,7 @@ import type {
   StatusAppearance,
   SystemSnapshot,
   TaskSourceId,
+  UpdateState,
 } from "./types";
 
 const STATUS_META: Record<CodexTaskStatus, { label: string; description: string }> = {
@@ -163,6 +165,71 @@ function ActionResult({ result }: { result?: { ok: boolean; message: string } })
   );
 }
 
+function UpdateCard({
+  state,
+  pending,
+  onAction,
+}: {
+  state: UpdateState;
+  pending: boolean;
+  onAction: () => void;
+}) {
+  const downloading = state.status === "downloading";
+  const installing = state.status === "installing";
+  const checking = state.status === "checking";
+  const failed = state.status === "error";
+  const upToDate = state.status === "up-to-date";
+  const progress = typeof state.progress === "number" ? Math.round(state.progress) : undefined;
+  const title = upToDate
+    ? "Deck Threads is current"
+    : failed
+      ? "Update needs attention"
+      : downloading
+        ? `Downloading${progress === undefined ? "" : ` ${progress}%`}`
+        : installing
+          ? "Restarting Deck Threads"
+          : checking
+            ? "Checking for updates"
+            : `Version ${state.availableVersion || "new"} is ready`;
+  const actionLabel = failed
+    ? state.availableVersion ? "Try again" : "Check again"
+    : "Update now";
+  const showAction = state.status === "available" || failed;
+
+  return (
+    <article className={`update-card update-${state.status}`} aria-live="polite" aria-atomic="true">
+      <div className="update-card-heading">
+        <span className="update-card-icon" aria-hidden="true">
+          {upToDate ? <Check weight="bold" /> : failed ? <Warning weight="bold" /> : downloading || installing || checking ? <CircleNotch className="spin" /> : <DownloadSimple weight="bold" />}
+        </span>
+        <div>
+          <p>App update</p>
+          <strong>{title}</strong>
+        </div>
+      </div>
+      {state.message && <span className="update-card-copy">{state.message}</span>}
+      {downloading && (
+        <div
+          className="update-progress"
+          role="progressbar"
+          aria-label="Downloading Deck Threads update"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+        >
+          <span style={{ width: `${progress || 0}%` }} />
+        </div>
+      )}
+      {showAction && (
+        <button className="update-action" onClick={onAction} disabled={pending}>
+          {pending ? <CircleNotch className="spin" /> : failed ? <ArrowsClockwise /> : <DownloadSimple />}
+          {actionLabel}
+        </button>
+      )}
+    </article>
+  );
+}
+
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("threads");
   const [appearanceSource, setAppearanceSource] = useState<TaskSourceId>("codex");
@@ -171,6 +238,11 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionResult, setActionResult] = useState<{ ok: boolean; message: string }>();
+  const [updateActionPending, setUpdateActionPending] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>({
+    status: "disabled",
+    currentVersion: "",
+  });
 
   const loadSnapshot = useCallback(async (announce = false) => {
     const next = announce ? await window.bridgeApi.refresh() : await window.bridgeApi.getSnapshot();
@@ -204,6 +276,22 @@ export function App() {
       window.clearInterval(timer);
     };
   }, [loadSnapshot]);
+
+  useEffect(() => {
+    let mounted = true;
+    window.bridgeApi.getUpdateState()
+      .then((state) => {
+        if (mounted) setUpdateState(state);
+      })
+      .catch(() => undefined);
+    const removeListener = window.bridgeApi.onUpdateState((state) => {
+      if (mounted) setUpdateState(state);
+    });
+    return () => {
+      mounted = false;
+      removeListener();
+    };
+  }, []);
 
   const taskCounts = useMemo(() => ({
     working: snapshot.tasks.filter((task) => task?.status === "working").length,
@@ -314,6 +402,25 @@ export function App() {
     }
   };
 
+  const handleUpdateAction = async () => {
+    setUpdateActionPending(true);
+    try {
+      const next = updateState.status === "error" && !updateState.availableVersion
+        ? await window.bridgeApi.checkForUpdates()
+        : await window.bridgeApi.startUpdate();
+      setUpdateState(next);
+    } catch {
+      setUpdateState((current) => ({
+        ...current,
+        status: "error",
+        progress: undefined,
+        message: "The update could not be started. Try again.",
+      }));
+    } finally {
+      setUpdateActionPending(false);
+    }
+  };
+
   const updateSourceAllocation = async (nextSettings: SourceAllocationSettings) => {
     setSnapshot((current) => ({ ...current, allocationSettings: nextSettings }));
     try {
@@ -364,10 +471,15 @@ export function App() {
           <button className={`nav-item ${activeView === "activity" ? "nav-active" : ""}`} onClick={() => setActiveView("activity")}><TerminalWindow /> Activity</button>
         </nav>
 
-        <div className="sidebar-note">
-          <p>Deck sync</p>
-          <strong>{snapshot.streamDeck.pluginConnected ? "Plugin connected" : "Waiting for plugin"}</strong>
-          <span>Keep this companion running to update keys and open tasks.</span>
+        <div className="sidebar-status-stack">
+          {!["disabled", "idle"].includes(updateState.status) && (
+            <UpdateCard state={updateState} pending={updateActionPending} onAction={handleUpdateAction} />
+          )}
+          <div className="sidebar-note">
+            <p>Deck sync</p>
+            <strong>{snapshot.streamDeck.pluginConnected ? "Plugin connected" : "Waiting for plugin"}</strong>
+            <span>Keep this companion running to update keys and open tasks.</span>
+          </div>
         </div>
       </aside>
 

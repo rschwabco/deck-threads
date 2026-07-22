@@ -18,6 +18,12 @@ if grep -q '^TeamIdentifier=not set$' <<<"$signature_details"; then
   echo "Release has no Apple Team Identifier." >&2
   exit 1
 fi
+expected_team_id="${DECK_THREADS_APPLE_TEAM_ID:-${APPLE_TEAM_ID:-W7F2CX5957}}"
+actual_team_id="$(sed -n 's/^TeamIdentifier=//p' <<<"$signature_details" | head -1)"
+if [[ "$actual_team_id" != "$expected_team_id" ]]; then
+  echo "Release Team Identifier $actual_team_id does not match expected Team Identifier $expected_team_id." >&2
+  exit 1
+fi
 
 codesign --verify --deep --strict --verbose=2 "$app_path"
 spctl --assess --verbose=4 --type execute "$app_path"
@@ -35,5 +41,7 @@ if ! codesign -d --entitlements :- "$app_path" 2>/dev/null | grep -q 'com.apple.
   exit 1
 fi
 
+node scripts/verify-update-metadata.cjs "$release_root"
+
 find "$release_root" -maxdepth 1 -type f \( -name 'Deck-Threads-*.dmg' -o -name 'Deck-Threads-*.zip' \) -print
-echo "Developer ID signature, Hardened Runtime, Gatekeeper, notarization, and universal binary checks passed."
+echo "Developer ID signature, Hardened Runtime, Gatekeeper, notarization, updater metadata, and universal binary checks passed."

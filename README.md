@@ -33,12 +33,14 @@ Deck Threads is an independent, open-source utility. It is not affiliated with o
 ## Install
 
 1. Open the [latest Deck Threads release](https://github.com/rschwabco/deck-threads/releases/latest).
-2. Download `Deck-Threads-1.0.0-universal.dmg`, open it, and drag **Deck Threads** to Applications.
-3. Download `com.roie.deck-threads.streamDeckPlugin` and double-click it. Stream Deck will ask you to confirm installation.
-4. Open **Deck Threads** from Applications. The app adds a menu-bar item and enables launch at login.
+2. Download `Deck-Threads-Installer.pkg` to install the companion and Stream Deck plugin together.
+3. If Stream Deck Marketplace already manages the plugin, download `Deck-Threads-Companion.pkg` instead.
+4. Open the package and complete the macOS Installer steps. Deck Threads adds a menu-bar item and enables launch at login.
 5. Keep Codex Desktop and/or an active Claude Code session running alongside Stream Deck. The bundled 4 × 2 profile installs automatically on Stream Deck +.
 
 For device-specific setup, manual action placement, verification, and uninstall instructions, see the [complete setup guide](docs/SETUP.md).
+
+After the first signed installation, Deck Threads checks GitHub Releases for updates. When a newer version is available, the companion shows an **Update now** action, downloads the signed update, restarts, and keeps an already-installed Stream Deck plugin in sync.
 
 ## How it works
 
@@ -67,7 +69,7 @@ npm run build
 npm run streamdeck:pack
 ```
 
-Creating a public macOS release additionally requires an Apple Developer account, a Developer ID Application certificate, and notarization credentials. See [Releasing](docs/RELEASING.md).
+Creating a public macOS release additionally requires an Apple Developer account, Developer ID Application and Installer certificates, and notarization credentials. See [Releasing](docs/RELEASING.md).
 
 ## License
 

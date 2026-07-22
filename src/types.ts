@@ -94,6 +94,18 @@ export interface SourceAllocationSettings {
   fillUnused: boolean;
 }
 
+export type UpdateStatus = "disabled" | "idle" | "checking" | "up-to-date" | "available" | "downloading" | "installing" | "error";
+
+export interface UpdateState {
+  status: UpdateStatus;
+  currentVersion: string;
+  availableVersion?: string;
+  releaseDate?: string;
+  progress?: number;
+  checkedAt?: string;
+  message?: string;
+}
+
 export interface BridgeApi {
   getSnapshot(): Promise<SystemSnapshot>;
   refresh(): Promise<SystemSnapshot>;
@@ -101,6 +113,10 @@ export interface BridgeApi {
   setSourceAllocation(value: SourceAllocationSettings): Promise<SourceAllocationSettings>;
   openTask(sourceId: TaskSourceId, threadId: string, title: string, openId?: string): Promise<{ ok: boolean; message: string; deepLink?: string }>;
   openCodexThread(threadId: string, title: string): Promise<{ ok: boolean; message: string; deepLink?: string }>;
+  getUpdateState(): Promise<UpdateState>;
+  checkForUpdates(): Promise<UpdateState>;
+  startUpdate(): Promise<UpdateState>;
+  onUpdateState(callback: (state: UpdateState) => void): () => void;
   onEvent(callback: (event: EventEntry) => void): () => void;
 }
 
