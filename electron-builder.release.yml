@@ -17,6 +17,8 @@ extraResources:
     to: trayTemplate.png
   - from: build/trayTemplate@2x.png
     to: trayTemplate@2x.png
+  - from: stream-deck/com.roie.deck-threads.sdPlugin
+    to: stream-deck-plugin/com.roie.deck-threads.sdPlugin
 
 directories:
   buildResources: build

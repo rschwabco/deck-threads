@@ -25,6 +25,7 @@
     "marketplace:assets": "electron scripts/generate-marketplace-assets.cjs",
     "start": "electron .",
     "test:state": "node scripts/test-codex-state.cjs",
+    "test:bundled-plugin": "node scripts/test-bundled-plugin.cjs",
     "qa:electron": "node scripts/qa-electron.cjs",
     "streamdeck:build": "npm --prefix stream-deck run build",
     "streamdeck:validate": "npm --prefix stream-deck run validate",
@@ -72,6 +73,10 @@
       {
         "from": "build/trayTemplate@2x.png",
         "to": "trayTemplate@2x.png"
+      },
+      {
+        "from": "stream-deck/com.roie.deck-threads.sdPlugin",
+        "to": "stream-deck-plugin/com.roie.deck-threads.sdPlugin"
       }
     ],
     "directories": {
