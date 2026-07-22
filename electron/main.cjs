@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, Menu, nativeImage, nativeTheme, shell, Tray } = require("electron");
+const fs = require("node:fs");
 const path = require("node:path");
 const http = require("node:http");
 const { execFile } = require("node:child_process");
@@ -14,9 +15,11 @@ const {
   writeSourceAllocation,
 } = require("./source-allocation.cjs");
 const { assignStableTaskSlots, readTaskSlotIds, writeTaskSlotIds } = require("./task-slots.cjs");
+const { installBundledStreamDeckPlugin } = require("./stream-deck-plugin-install.cjs");
 
 const execFileAsync = promisify(execFile);
 const BRIDGE_HOST = "127.0.0.1";
+const STREAM_DECK_PLUGIN_BUNDLE = "com.roie.deck-threads.sdPlugin";
 const requestedBridgePort = Number(process.env.DECK_THREADS_BRIDGE_PORT);
 const BRIDGE_PORT = Number.isInteger(requestedBridgePort) && requestedBridgePort > 0 && requestedBridgePort <= 65535
   ? requestedBridgePort
@@ -57,6 +60,27 @@ function getResourcePath(filename) {
   return app.isPackaged
     ? path.join(process.resourcesPath, filename)
     : path.join(__dirname, "..", "build", filename);
+}
+
+async function ensureBundledStreamDeckPlugin() {
+  if (process.platform !== "darwin" || !app.isPackaged) {
+    return { status: "development" };
+  }
+
+  const source = path.join(process.resourcesPath, "stream-deck-plugin", STREAM_DECK_PLUGIN_BUNDLE);
+  const pluginsRoot = process.env.DECK_THREADS_STREAM_DECK_PLUGINS_DIR
+    || path.join(app.getPath("home"), "Library", "Application Support", "com.elgato.StreamDeck", "Plugins");
+  const destination = path.join(pluginsRoot, STREAM_DECK_PLUGIN_BUNDLE);
+  const result = await installBundledStreamDeckPlugin(source, destination);
+
+  if (result.status === "installed"
+    && process.env.DECK_THREADS_SKIP_STREAM_DECK_RESTART !== "1"
+    && fs.existsSync("/Applications/Elgato Stream Deck.app")) {
+    await execFileAsync("/usr/bin/pkill", ["-x", "Stream Deck"]).catch(() => undefined);
+    await execFileAsync("/usr/bin/open", ["-a", "/Applications/Elgato Stream Deck.app"]).catch(() => undefined);
+  }
+
+  return result;
 }
 
 function getLaunchAtLoginStatus() {
@@ -433,7 +457,7 @@ ipcMain.handle("bridge:refresh", async () => {
 
 ipcMain.handle("bridge:set-display-settings", (_event, value) => {
   const settings = writeDisplaySettings(displaySettingsPath(), value);
-  emitEvent("system", "success", "Stream Deck labels updated", "Key labels refresh automatically.");
+  emitEvent("system", "success", "Stream Deck appearance updated", "Keys refresh automatically.");
   return settings;
 });
 
@@ -481,6 +505,15 @@ app.whenReady().then(() => {
   const openedAtLogin = app.isPackaged && app.getLoginItemSettings().wasOpenedAtLogin;
   if (openedAtLogin) app.dock?.hide();
   else showMainWindow();
+  ensureBundledStreamDeckPlugin()
+    .then((result) => {
+      if (result.status === "installed") {
+        emitEvent("system", "success", "Stream Deck plugin installed", `Version ${result.version || "current"} is ready.`);
+      }
+    })
+    .catch((error) => {
+      emitEvent("system", "warning", "Could not install the Stream Deck plugin", error.message);
+    });
   if (process.env.CODEX_BRIDGE_API_DISABLED !== "1") startBridgeServer();
   app.on("activate", showMainWindow);
 });

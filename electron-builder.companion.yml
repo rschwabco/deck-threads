@@ -17,12 +17,10 @@ extraResources:
     to: trayTemplate.png
   - from: build/trayTemplate@2x.png
     to: trayTemplate@2x.png
-  - from: stream-deck/com.roie.deck-threads.sdPlugin
-    to: stream-deck-plugin/com.roie.deck-threads.sdPlugin
 
 directories:
   buildResources: build
-  output: release-production
+  output: release-companion-1.0.1
 
 mac:
   category: public.app-category.utilities
@@ -31,14 +29,4 @@ mac:
   hardenedRuntime: true
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
-  notarize: true
-
-dmg:
-  sign: false
-  contents:
-    - x: 150
-      y: 180
-    - x: 450
-      y: 180
-      type: link
-      path: /Applications
+  notarize: false

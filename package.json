@@ -1,7 +1,7 @@
 {
   "name": "deck-threads-companion",
   "productName": "Deck Threads",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "author": "Roie",
   "description": "A local companion that brings live Codex and Claude tasks to Stream Deck.",
@@ -72,6 +72,10 @@
       {
         "from": "build/trayTemplate@2x.png",
         "to": "trayTemplate@2x.png"
+      },
+      {
+        "from": "stream-deck/com.roie.deck-threads.sdPlugin",
+        "to": "stream-deck-plugin/com.roie.deck-threads.sdPlugin"
       }
     ],
     "directories": {

@@ -1,4 +1,4 @@
-import type { AgentTask } from "./companion-client";
+import type { AgentTask, KeyAnimation, KeyTypography, StatusAppearance } from "./companion-client";
 
 const COLORS: Record<string, string> = {
   working: "#6682FF",
@@ -53,8 +53,54 @@ function shell(content: string, background = "#151711", border = "#34382D") {
   return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
 }
 
-function animatedColor(colors: string[], frame: number) {
-  return colors[Math.abs(frame) % colors.length];
+function mixHex(color: string, target: string, amount: number) {
+  const sourceMatch = /^#([0-9a-f]{6})$/i.exec(color);
+  const targetMatch = /^#([0-9a-f]{6})$/i.exec(target);
+  if (!sourceMatch || !targetMatch) return color;
+  const source = Number.parseInt(sourceMatch[1], 16);
+  const destination = Number.parseInt(targetMatch[1], 16);
+  const channels = [16, 8, 0].map((shift) => {
+    const start = (source >> shift) & 255;
+    const end = (destination >> shift) & 255;
+    return Math.round(start + (end - start) * amount).toString(16).padStart(2, "0");
+  });
+  return `#${channels.join("").toUpperCase()}`;
+}
+
+function animatedBackground(color: string, animation: KeyAnimation, frame: number) {
+  if (animation !== "breathe" && animation !== "pulse") return color;
+  const speed = animation === "breathe" ? 0.12 : 0.2;
+  const strength = animation === "breathe" ? 0.12 : 0.17;
+  const amount = ((Math.sin(frame * speed) + 1) / 2) * strength;
+  return mixHex(color, "#FFFFFF", amount);
+}
+
+function contrastForeground(backgroundColor: string) {
+  const match = /^#([0-9a-f]{6})$/i.exec(backgroundColor);
+  if (!match) return "#FFFFFF";
+  const value = Number.parseInt(match[1], 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return (red * 299 + green * 587 + blue * 114) / 1000 > 158 ? "#111722" : "#FFFFFF";
+}
+
+function motionLayer(animation: KeyAnimation, frame: number, foreground: string) {
+  if (animation === "sweep") {
+    const sheenX = -92 + (frame % 48) * 6.5;
+    return `<rect x="${sheenX}" y="-30" width="30" height="210" fill="${foreground}" opacity="0.16" transform="rotate(20 72 72)"/>`;
+  }
+  if (animation === "breathe") {
+    const opacity = (0.025 + (Math.sin(frame * 0.12) + 1) * 0.035).toFixed(3);
+    return `<rect width="144" height="144" rx="16" fill="${foreground}" opacity="${opacity}"/>`;
+  }
+  if (animation === "pulse") {
+    const phase = Math.abs(frame) % 32;
+    const radius = 20 + phase * 1.65;
+    const opacity = Math.max(0.04, 0.36 - phase * 0.01).toFixed(2);
+    return `<circle cx="72" cy="72" r="${radius}" fill="none" stroke="${foreground}" stroke-width="7" opacity="${opacity}"/>`;
+  }
+  return "";
 }
 
 function pinIcon(fill: string) {
@@ -66,28 +112,42 @@ function pinIcon(fill: string) {
 
 function sourcePalette(task: AgentTask) {
   if (task.sourceId === "claude") {
-    return {
-      border: "#E18452",
-      shadow: "#27150F",
-    };
+    return { border: "#E18452" };
   }
-  return {
-    border: "#6682FF",
-    shadow: "#111A36",
-  };
+  return { border: "#6682FF" };
 }
 
-const STATUS_SURFACES = {
-  working: [
-    "#24375F", "#263B67", "#29406F", "#2B4477", "#2E497F", "#304D87",
-    "#33528F", "#304D87", "#2E497F", "#2B4477", "#29406F", "#263B67",
-  ],
-  question: "#4B2B1D",
-  unread: "#173A29",
-  read: "#242D39",
-  waiting: "#40321D",
-  error: "#43232B",
+const DEFAULT_STATUS_APPEARANCE: Record<Exclude<AgentTask["status"], "off">, StatusAppearance> = {
+  working: { backgroundColor: "#24375F", animation: "sweep" },
+  question: { backgroundColor: "#57321F", animation: "pulse" },
+  unread: { backgroundColor: "#1C4934", animation: "breathe" },
+  read: { backgroundColor: "#2B333F", animation: "still" },
+  waiting: { backgroundColor: "#4A3920", animation: "still" },
+  error: { backgroundColor: "#4D2730", animation: "still" },
 };
+const DEFAULT_KEY_TYPOGRAPHY: KeyTypography = { slotHandleFontSize: 17, threadNameFontSize: 12 };
+
+function scaledFontSize(value: number, defaultValue: number, baseSize: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, Math.round((value / defaultValue) * baseSize)));
+}
+
+function maxCharactersForFont(baseCharacters: number, baseFontSize: number, fontSize: number) {
+  return Math.max(7, Math.round((baseCharacters * baseFontSize) / fontSize));
+}
+
+function handleText(
+  value: string,
+  x: number,
+  y: number,
+  fill: string,
+  fontSize: number,
+  anchor: "start" | "middle" = "middle",
+  maxWidth = 110,
+) {
+  const estimatedWidth = value.length * fontSize * 0.62;
+  const fit = estimatedWidth > maxWidth ? ` textLength="${maxWidth}" lengthAdjust="spacingAndGlyphs"` : "";
+  return `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${fill}" font-family="-apple-system, sans-serif" font-size="${fontSize}" font-weight="900"${fit}>${value}</text>`;
+}
 
 function titleText(value: string, startY: number, fill: string, fontSize = 15, maxCharacters = 13, maxLines = 2) {
   return wrapTitle(value, maxCharacters, maxLines).map((line, index) =>
@@ -95,7 +155,15 @@ function titleText(value: string, startY: number, fill: string, fontSize = 15, m
   ).join("");
 }
 
-export function threadKey(task: AgentTask | null | undefined, slot: number, online: boolean, frame = 0, showThreadTitle = task?.status === "read") {
+export function threadKey(
+  task: AgentTask | null | undefined,
+  slot: number,
+  online: boolean,
+  frame = 0,
+  showThreadTitle = task?.status === "read",
+  appearance?: StatusAppearance,
+  typography?: KeyTypography,
+) {
   if (!online) {
     return shell(`<text x="72" y="59" text-anchor="middle" fill="#E9EBE4" font-family="-apple-system, sans-serif" font-size="15" font-weight="750">COMPANION</text>
       <text x="72" y="87" text-anchor="middle" fill="#AEB3A7" font-family="-apple-system, sans-serif" font-size="14" font-weight="650">OFFLINE</text>`, "#111722", "#3C485B");
@@ -106,71 +174,75 @@ export function threadKey(task: AgentTask | null | undefined, slot: number, onli
 
   const projectLabel = escapeXml(task.projectLabel || `${slot + 1}`);
   const palette = sourcePalette(task);
+  const statusAppearance = task.status === "off"
+    ? { backgroundColor: "#202630", animation: "still" as const }
+    : appearance || DEFAULT_STATUS_APPEARANCE[task.status];
+  const background = animatedBackground(statusAppearance.backgroundColor, statusAppearance.animation, frame);
+  const foreground = contrastForeground(statusAppearance.backgroundColor);
+  const motion = motionLayer(statusAppearance.animation, frame, foreground);
+  const keyTypography = typography || DEFAULT_KEY_TYPOGRAPHY;
+  const compactHandleFontSize = scaledFontSize(keyTypography.slotHandleFontSize, 17, 42, 28, 64);
+  const titleHandleFontSize = scaledFontSize(keyTypography.slotHandleFontSize, 17, 24, 17, 38);
+  const secondaryHandleFontSize = scaledFontSize(keyTypography.slotHandleFontSize, 17, 19, 13, 31);
+  const threadNameFontSize = scaledFontSize(keyTypography.threadNameFontSize, 12, 14, 10, 24);
+  const titleHandleY = Math.max(30, titleHandleFontSize + 7);
+  const compactHandleY = Math.round(72 + compactHandleFontSize * 0.36);
 
   if (task.status === "working") {
-    const background = animatedColor(STATUS_SURFACES.working, frame);
-    const flow = frame % 48;
-    const waveA = -132 + flow * 5.75;
-    const waveB = 112 - flow * 4.8;
-    const sheenX = -92 + flow * 6.5;
-    const breathe = (0.12 + (Math.sin(frame * 0.24) + 1) * 0.035).toFixed(3);
     const label = showThreadTitle
-      ? `<text x="18" y="34" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="24" font-weight="850">${projectLabel}</text>${titleText(task.title, 91, "#FFFFFF", 14, 14, 2)}`
-      : `<rect x="19" y="39" width="106" height="66" rx="33" fill="${palette.shadow}" opacity="${breathe}"/><text x="72" y="87" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="42" font-weight="850">${projectLabel}</text>`;
-    return shell(`<path d="M-110 49 C-70 7 -28 91 14 49 S98 7 140 49 S224 91 266 49" fill="none" stroke="#8DA2FF" stroke-width="25" stroke-linecap="round" opacity="0.18" transform="translate(${waveA} 0)"/>
-      <path d="M-120 94 C-76 53 -32 135 12 94 S100 53 144 94 S232 135 276 94" fill="none" stroke="#152344" stroke-width="31" stroke-linecap="round" opacity="0.24" transform="translate(${waveB} 0)"/>
-      <rect x="${sheenX}" y="-30" width="28" height="210" fill="#FFFFFF" opacity="0.12" transform="rotate(20 72 72)"/>
-      ${label}
-      ${task.pinned ? pinIcon("#FFFFFF") : ""}`, background, palette.border);
+      ? `${handleText(projectLabel, 18, titleHandleY, foreground, titleHandleFontSize, "start", 88)}${titleText(task.title, 91, foreground, threadNameFontSize, maxCharactersForFont(14, 14, threadNameFontSize), 2)}`
+      : handleText(projectLabel, 72, compactHandleY, foreground, compactHandleFontSize);
+    return shell(`${motion}${label}
+      ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
   }
 
   if (task.status === "question") {
-    const phase = frame % 36;
-    const ringRadius = 22 + (phase % 18) * 1.5;
-    const ringOpacity = (0.48 - (phase % 18) * 0.02).toFixed(2);
     const content = showThreadTitle
-      ? `<text x="18" y="30" fill="#FFD9BA" font-family="-apple-system, sans-serif" font-size="23" font-weight="900">${projectLabel}</text>
-        <text x="72" y="78" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="58" font-weight="950">?</text>
-        ${titleText(task.title, 108, "#FFFFFF", 13, 15, 2)}`
-      : `<text x="72" y="91" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="76" font-weight="950">?</text>
-        <text x="72" y="125" text-anchor="middle" fill="#FFD9BA" font-family="-apple-system, sans-serif" font-size="20" font-weight="900">${projectLabel}</text>`;
-    return shell(`<circle cx="72" cy="68" r="${ringRadius}" fill="none" stroke="#FFF3E8" stroke-width="6" opacity="${ringOpacity}"/>
-      <circle cx="72" cy="68" r="${Math.max(12, ringRadius - 18)}" fill="none" stroke="#8F2E00" stroke-width="8" opacity="0.28"/>
-      ${content}
-      ${task.pinned ? pinIcon("#FFFFFF") : ""}`, STATUS_SURFACES.question, palette.border);
+      ? `${handleText(projectLabel, 18, titleHandleY, foreground, titleHandleFontSize, "start", 88)}
+        <text x="72" y="78" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="58" font-weight="950">?</text>
+        ${titleText(task.title, 108, foreground, threadNameFontSize, maxCharactersForFont(15, 13, threadNameFontSize), 2)}`
+      : `<text x="72" y="91" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="76" font-weight="950">?</text>
+        ${handleText(projectLabel, 72, 126, foreground, secondaryHandleFontSize)}`;
+    return shell(`${motion}${content}
+      ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
   }
 
   if (task.status === "unread") {
-    const sheenX = -80 + (frame % 6) * 48;
     const content = showThreadTitle
-      ? `<text x="18" y="30" fill="#C8FFDA" font-family="-apple-system, sans-serif" font-size="23" font-weight="900">${projectLabel}</text><text x="72" y="76" text-anchor="middle" fill="#C8FFDA" font-family="-apple-system, sans-serif" font-size="51" font-weight="900">✓</text>${titleText(task.title, 107, "#FFFFFF", 13, 15, 2)}`
-      : `<text x="72" y="88" text-anchor="middle" fill="#C8FFDA" font-family="-apple-system, sans-serif" font-size="67" font-weight="900">✓</text><text x="72" y="124" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="19" font-weight="900">${projectLabel}</text>`;
-    return shell(`<rect x="${sheenX}" y="-20" width="34" height="190" fill="#72F59F" opacity="0.18" transform="rotate(18 72 72)"/>
-      ${content}
-      ${task.pinned ? pinIcon("#C8FFDA") : ""}`, STATUS_SURFACES.unread, palette.border);
+      ? `${handleText(projectLabel, 18, titleHandleY, foreground, titleHandleFontSize, "start", 88)}<text x="72" y="76" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="51" font-weight="900">✓</text>${titleText(task.title, 107, foreground, threadNameFontSize, maxCharactersForFont(15, 13, threadNameFontSize), 2)}`
+      : `<text x="72" y="88" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="67" font-weight="900">✓</text>${handleText(projectLabel, 72, 125, foreground, secondaryHandleFontSize)}`;
+    return shell(`${motion}${content}
+      ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
   }
 
   if (task.status === "waiting") {
     const content = showThreadTitle
-      ? `<text x="18" y="30" fill="#FFD0A8" font-family="-apple-system, sans-serif" font-size="23" font-weight="900">${projectLabel}</text><text x="72" y="73" text-anchor="middle" fill="#FFD0A8" font-family="-apple-system, sans-serif" font-size="50" font-weight="850">…</text>${titleText(task.title, 107, "#FFFFFF", 13, 15, 2)}`
-      : `<text x="72" y="88" text-anchor="middle" fill="#FFD0A8" font-family="-apple-system, sans-serif" font-size="62" font-weight="850">…</text><text x="72" y="124" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="19" font-weight="900">${projectLabel}</text>`;
-    return shell(`${content}
-      ${task.pinned ? pinIcon("#FFD0A8") : ""}`, STATUS_SURFACES.waiting, palette.border);
+      ? `${handleText(projectLabel, 18, titleHandleY, foreground, titleHandleFontSize, "start", 88)}<text x="72" y="73" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="50" font-weight="850">…</text>${titleText(task.title, 107, foreground, threadNameFontSize, maxCharactersForFont(15, 13, threadNameFontSize), 2)}`
+      : `<text x="72" y="88" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="62" font-weight="850">…</text>${handleText(projectLabel, 72, 125, foreground, secondaryHandleFontSize)}`;
+    return shell(`${motion}${content}
+      ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
   }
 
   if (task.status === "error") {
     const content = showThreadTitle
-      ? `<text x="18" y="30" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="23" font-weight="900">${projectLabel}</text><text x="72" y="73" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="50" font-weight="900">!</text>${titleText(task.title, 107, "#FFFFFF", 13, 15, 2)}`
-      : `<text x="72" y="88" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="64" font-weight="900">!</text><text x="72" y="124" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="19" font-weight="900">${projectLabel}</text>`;
-    return shell(`${content}
-      ${task.pinned ? pinIcon("#FFFFFF") : ""}`, STATUS_SURFACES.error, palette.border);
+      ? `${handleText(projectLabel, 18, titleHandleY, foreground, titleHandleFontSize, "start", 88)}<text x="72" y="73" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="50" font-weight="900">!</text>${titleText(task.title, 107, foreground, threadNameFontSize, maxCharactersForFont(15, 13, threadNameFontSize), 2)}`
+      : `<text x="72" y="88" text-anchor="middle" fill="${foreground}" font-family="-apple-system, sans-serif" font-size="64" font-weight="900">!</text>${handleText(projectLabel, 72, 125, foreground, secondaryHandleFontSize)}`;
+    return shell(`${motion}${content}
+      ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
   }
 
-  const lines = wrapTitle(task.title).map((line, index) =>
-    `<text x="72" y="${72 + index * 21}" text-anchor="middle" fill="#F0F2ED" font-family="-apple-system, sans-serif" font-size="17" font-weight="750">${escapeXml(line)}</text>`,
-  ).join("");
+  const readTitle = titleText(
+    task.title,
+    74,
+    foreground,
+    threadNameFontSize,
+    maxCharactersForFont(10, 14, threadNameFontSize),
+    threadNameFontSize > 18 ? 2 : 3,
+  );
 
-  return shell(`<text x="72" y="${showThreadTitle ? 40 : 84}" text-anchor="middle" fill="#FFFFFF" font-family="-apple-system, sans-serif" font-size="${showThreadTitle ? 25 : 42}" font-weight="900">${projectLabel}</text>
-    ${showThreadTitle ? lines : ""}
-    ${task.pinned ? pinIcon("#C6CEDA") : ""}`, STATUS_SURFACES.read, palette.border);
+  return shell(`${motion}${showThreadTitle
+    ? handleText(projectLabel, 72, titleHandleY, foreground, titleHandleFontSize)
+    : handleText(projectLabel, 72, compactHandleY, foreground, compactHandleFontSize)}
+    ${showThreadTitle ? readTitle : ""}
+    ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
 }

@@ -2,9 +2,14 @@
 
 ## Unreleased
 
+## 1.0.1 — 2026-07-22
+
 - Added local Claude Code task monitoring alongside Codex, including sidebar titles, pinned tasks, archived-task filtering, lifecycle status, and reliable desktop task switching.
 - Added configurable Codex/Claude key reservations with a 4/4 default and optional borrowing of unused capacity.
-- Updated companion and Stream Deck keys to use blue or orange source borders with muted status-colored surfaces.
+- Added per-app background colors and four animation choices for every task status.
+- Added per-app controls for slot-handle and thread-name font sizes.
+- Kept configured typography consistent between active and inactive Stream Deck slots.
+- Updated companion and Stream Deck keys to use blue or orange source borders with configurable status-colored surfaces.
 - Kept compact project task numbers stable across status and priority changes.
 
 ## 1.0.0 — 2026-07-20

@@ -6,6 +6,7 @@ import {
   CircleNotch,
   Command,
   Monitor,
+  Palette,
   Plug,
   PushPinSimple,
   SlidersHorizontal,
@@ -19,23 +20,45 @@ import type {
   CodexTaskStatus,
   EventEntry,
   HealthState,
+  KeyAnimation,
+  KeyTypography,
   LabelConfigurableStatus,
   SourceAllocationSettings,
+  StatusAppearance,
   SystemSnapshot,
+  TaskSourceId,
 } from "./types";
 
-const STATUS_META: Record<CodexTaskStatus, { label: string; color: string; description: string }> = {
-  working: { label: "Working", color: "#4169FF", description: "A calm cobalt flow while an agent is active." },
-  question: { label: "Question", color: "#FF6D00", description: "Bright orange when an agent is waiting for your answer." },
-  unread: { label: "Unread", color: "#2ED47A", description: "A brighter green signal when work finishes." },
-  read: { label: "Read", color: "#D9DEE8", description: "A quiet neutral key after you view the result." },
-  waiting: { label: "Waiting", color: "#F5A742", description: "Amber when an agent needs your attention." },
-  error: { label: "Error", color: "#FF5C70", description: "Red when a task cannot continue." },
-  off: { label: "Empty", color: "#303746", description: "An unused slot stays dark." },
+const STATUS_META: Record<CodexTaskStatus, { label: string; description: string }> = {
+  working: { label: "Working", description: "An agent is actively moving the task forward." },
+  question: { label: "Question", description: "The agent is waiting for your answer." },
+  unread: { label: "Unread", description: "New completed work is ready to review." },
+  read: { label: "Read", description: "The latest result has already been viewed." },
+  waiting: { label: "Waiting", description: "The task needs attention before it can continue." },
+  error: { label: "Error", description: "The task cannot continue without intervention." },
+  off: { label: "Empty", description: "An unused slot stays dark." },
 };
 
 const TITLE_STATES: LabelConfigurableStatus[] = ["working", "question", "unread", "read", "waiting", "error"];
-type ActiveView = "threads" | "sources" | "connections" | "labels" | "activity";
+const SOURCE_META: Record<TaskSourceId, { label: string; shortLabel: string }> = {
+  codex: { label: "Codex", shortLabel: "CX" },
+  claude: { label: "Claude", shortLabel: "CL" },
+};
+const ANIMATION_META: Array<{ id: KeyAnimation; label: string; description: string }> = [
+  { id: "still", label: "Still", description: "No motion" },
+  { id: "breathe", label: "Breathe", description: "Soft brightness cycle" },
+  { id: "sweep", label: "Sweep", description: "Light moves across the key" },
+  { id: "pulse", label: "Pulse", description: "Expanding attention signal" },
+];
+const DEFAULT_STATUS_APPEARANCE: Record<LabelConfigurableStatus, StatusAppearance> = {
+  working: { backgroundColor: "#24375F", animation: "sweep" },
+  question: { backgroundColor: "#57321F", animation: "pulse" },
+  unread: { backgroundColor: "#1C4934", animation: "breathe" },
+  read: { backgroundColor: "#2B333F", animation: "still" },
+  waiting: { backgroundColor: "#4A3920", animation: "still" },
+  error: { backgroundColor: "#4D2730", animation: "still" },
+};
+type ActiveView = "threads" | "sources" | "connections" | "appearance" | "labels" | "activity";
 
 const EMPTY_SNAPSHOT: SystemSnapshot = {
   scannedAt: new Date(0).toISOString(),
@@ -52,6 +75,14 @@ const EMPTY_SNAPSHOT: SystemSnapshot = {
       read: true,
       waiting: false,
       error: false,
+    },
+    statusAppearance: {
+      codex: structuredClone(DEFAULT_STATUS_APPEARANCE),
+      claude: structuredClone(DEFAULT_STATUS_APPEARANCE),
+    },
+    typography: {
+      codex: { slotHandleFontSize: 17, threadNameFontSize: 12 },
+      claude: { slotHandleFontSize: 17, threadNameFontSize: 12 },
     },
   },
   allocationSettings: { reservations: { codex: 4, claude: 4 }, fillUnused: true },
@@ -82,6 +113,16 @@ function formatAge(value?: number) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function contrastForeground(backgroundColor: string) {
+  const match = /^#([0-9a-f]{6})$/i.exec(backgroundColor);
+  if (!match) return "#FFFFFF";
+  const value = Number.parseInt(match[1], 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return (red * 299 + green * 587 + blue * 114) / 1000 > 158 ? "#111722" : "#FFFFFF";
 }
 
 function HealthItem({
@@ -124,6 +165,7 @@ function ActionResult({ result }: { result?: { ok: boolean; message: string } })
 
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("threads");
+  const [appearanceSource, setAppearanceSource] = useState<TaskSourceId>("codex");
   const [snapshot, setSnapshot] = useState<SystemSnapshot>(EMPTY_SNAPSHOT);
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -169,9 +211,12 @@ export function App() {
     codex: snapshot.tasks.filter((task) => task?.sourceId === "codex").length,
     claude: snapshot.tasks.filter((task) => task?.sourceId === "claude").length,
   }), [snapshot.tasks]);
+  const selectedTypography = snapshot.displaySettings.typography[appearanceSource];
+  const selectedPreviewAppearance = snapshot.displaySettings.statusAppearance[appearanceSource].working;
 
   const updateTitleVisibility = async (status: LabelConfigurableStatus, visible: boolean) => {
     const nextSettings = {
+      ...snapshot.displaySettings,
       showThreadTitle: {
         ...snapshot.displaySettings.showThreadTitle,
         [status]: visible,
@@ -188,6 +233,71 @@ export function App() {
         source: "system",
         level: "error",
         message: "Could not save label settings",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
+  const updateStatusAppearance = async (
+    sourceId: TaskSourceId,
+    status: LabelConfigurableStatus,
+    patch: Partial<StatusAppearance>,
+  ) => {
+    const nextSettings = {
+      ...snapshot.displaySettings,
+      statusAppearance: {
+        ...snapshot.displaySettings.statusAppearance,
+        [sourceId]: {
+          ...snapshot.displaySettings.statusAppearance[sourceId],
+          [status]: {
+            ...snapshot.displaySettings.statusAppearance[sourceId][status],
+            ...patch,
+          },
+        },
+      },
+    };
+    setSnapshot((current) => ({ ...current, displaySettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setDisplaySettings(nextSettings);
+      setSnapshot((current) => ({ ...current, displaySettings: saved }));
+    } catch (error) {
+      const failure = {
+        id: `appearance-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save key appearance",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
+  const updateTypography = async (sourceId: TaskSourceId, patch: Partial<KeyTypography>) => {
+    const nextSettings = {
+      ...snapshot.displaySettings,
+      typography: {
+        ...snapshot.displaySettings.typography,
+        [sourceId]: {
+          ...snapshot.displaySettings.typography[sourceId],
+          ...patch,
+        },
+      },
+    };
+    setSnapshot((current) => ({ ...current, displaySettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setDisplaySettings(nextSettings);
+      setSnapshot((current) => ({ ...current, displaySettings: saved }));
+    } catch (error) {
+      const failure = {
+        id: `typography-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save key text sizes",
         detail: error instanceof Error ? error.message : String(error),
       } satisfies EventEntry;
       setEvents((current) => [failure, ...current].slice(0, 100));
@@ -249,6 +359,7 @@ export function App() {
           <button className={`nav-item ${activeView === "threads" ? "nav-active" : ""}`} onClick={() => setActiveView("threads")}><SquaresFour /> Threads</button>
           <button className={`nav-item ${activeView === "sources" ? "nav-active" : ""}`} onClick={() => setActiveView("sources")}><SlidersHorizontal /> Sources</button>
           <button className={`nav-item ${activeView === "connections" ? "nav-active" : ""}`} onClick={() => setActiveView("connections")}><Plug /> Connections</button>
+          <button className={`nav-item ${activeView === "appearance" ? "nav-active" : ""}`} onClick={() => setActiveView("appearance")}><Palette /> Appearance</button>
           <button className={`nav-item ${activeView === "labels" ? "nav-active" : ""}`} onClick={() => setActiveView("labels")}><TextAa /> Key labels</button>
           <button className={`nav-item ${activeView === "activity" ? "nav-active" : ""}`} onClick={() => setActiveView("activity")}><TerminalWindow /> Activity</button>
         </nav>
@@ -296,16 +407,26 @@ export function App() {
           <div className="task-grid">
             {Array.from({ length: 8 }, (_, index) => snapshot.tasks[index]).map((task, index) => {
               const status = STATUS_META[task?.status || "off"];
+              const appearance = task
+                ? snapshot.displaySettings.statusAppearance[task.sourceId][task.status as LabelConfigurableStatus]
+                : undefined;
+              const typography = task ? snapshot.displaySettings.typography[task.sourceId] : undefined;
               return (
                 <button
-                  className={`task-key task-${task?.status || "off"}${task ? ` task-source-${task.sourceId}` : ""}`}
+                  className={`task-key task-${task?.status || "off"}${task ? ` task-source-${task.sourceId} motion-${appearance?.animation || "still"}` : ""}`}
                   key={task?.stableId || `empty-${index}`}
                   onClick={() => openTask(index)}
                   disabled={!task}
                   data-thread-id={task?.id}
                   data-source-id={task?.sourceId}
                   data-cwd={task?.cwd}
-                  style={{ "--task-color": status.color } as React.CSSProperties}
+                  style={{
+                    "--task-color": appearance?.backgroundColor || "#303746",
+                    "--task-background": appearance?.backgroundColor || "#202630",
+                    "--task-foreground": contrastForeground(appearance?.backgroundColor || "#202630"),
+                    "--slot-handle-font-size": `${typography?.slotHandleFontSize || 17}px`,
+                    "--thread-name-font-size": `${typography?.threadNameFontSize || 12}px`,
+                  } as React.CSSProperties}
                   aria-label={task ? `Open task slot ${index + 1} in ${task.sourceName}: ${task.title}, ${status.label}` : `Task slot ${index + 1}: empty`}
                 >
                   <span className="task-key-topline" aria-hidden="true" />
@@ -430,6 +551,138 @@ export function App() {
           </section>
         </>}
 
+        {activeView === "appearance" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Per-app status design</p>
+              <h1>Key appearance</h1>
+              <p className="topbar-copy">Set the background and motion for every task status. Codex and Claude keep independent palettes.</p>
+            </div>
+          </header>
+
+          <section className="appearance-panel page-panel" aria-labelledby="appearance-heading">
+            <div className="panel-heading appearance-heading">
+              <div>
+                <h2 id="appearance-heading">Status backgrounds and motion</h2>
+                <p>Changes save immediately and update both this preview and your Stream Deck keys.</p>
+              </div>
+              <div className="source-tabs" role="group" aria-label="App appearance">
+                {(Object.keys(SOURCE_META) as TaskSourceId[]).map((sourceId) => (
+                  <button
+                    key={sourceId}
+                    className={`source-tab source-tab-${sourceId}${appearanceSource === sourceId ? " source-tab-active" : ""}`}
+                    onClick={() => setAppearanceSource(sourceId)}
+                    aria-pressed={appearanceSource === sourceId}
+                  >
+                    <span>{SOURCE_META[sourceId].shortLabel}</span>
+                    {SOURCE_META[sourceId].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <section className="typography-settings" aria-labelledby="typography-heading">
+              <div
+                className={`typography-preview task-source-${appearanceSource}`}
+                style={{
+                  "--task-background": selectedPreviewAppearance.backgroundColor,
+                  "--task-foreground": contrastForeground(selectedPreviewAppearance.backgroundColor),
+                  "--slot-handle-font-size": `${selectedTypography.slotHandleFontSize}px`,
+                  "--thread-name-font-size": `${selectedTypography.threadNameFontSize}px`,
+                } as React.CSSProperties}
+                aria-label={`${SOURCE_META[appearanceSource].label} text size preview`}
+              >
+                <span className="typography-preview-handle">{SOURCE_META[appearanceSource].shortLabel}3</span>
+                <strong>Configure task typography</strong>
+                <small>Working</small>
+              </div>
+              <div className="typography-controls">
+                <div className="typography-copy">
+                  <h3 id="typography-heading">Key text sizes</h3>
+                  <p>Set the slot handle and thread name independently for {SOURCE_META[appearanceSource].label}. Stream Deck scales them to its 144px key canvas.</p>
+                </div>
+                <label className="font-size-control">
+                  <span><strong>Slot handle</strong><small>Project label, such as {SOURCE_META[appearanceSource].shortLabel}3</small></span>
+                  <input
+                    type="range"
+                    min="12"
+                    max="28"
+                    step="1"
+                    value={selectedTypography.slotHandleFontSize}
+                    onChange={(event) => void updateTypography(appearanceSource, { slotHandleFontSize: Number(event.currentTarget.value) })}
+                    aria-label={`Slot handle font size for ${SOURCE_META[appearanceSource].label}`}
+                  />
+                  <output>{selectedTypography.slotHandleFontSize}px</output>
+                </label>
+                <label className="font-size-control">
+                  <span><strong>Thread name</strong><small>Full task title when it is shown</small></span>
+                  <input
+                    type="range"
+                    min="9"
+                    max="20"
+                    step="1"
+                    value={selectedTypography.threadNameFontSize}
+                    onChange={(event) => void updateTypography(appearanceSource, { threadNameFontSize: Number(event.currentTarget.value) })}
+                    aria-label={`Thread name font size for ${SOURCE_META[appearanceSource].label}`}
+                  />
+                  <output>{selectedTypography.threadNameFontSize}px</output>
+                </label>
+              </div>
+            </section>
+
+            <div className="appearance-status-grid">
+              {TITLE_STATES.map((status) => {
+                const setting = snapshot.displaySettings.statusAppearance[appearanceSource][status];
+                const sourceLabel = SOURCE_META[appearanceSource].label;
+                return (
+                  <article className="appearance-card" key={`${appearanceSource}-${status}`}>
+                    <div
+                      className={`appearance-preview task-source-${appearanceSource} motion-${setting.animation}`}
+                      style={{
+                        "--task-color": setting.backgroundColor,
+                        "--task-background": setting.backgroundColor,
+                        "--task-foreground": contrastForeground(setting.backgroundColor),
+                      } as React.CSSProperties}
+                      aria-hidden="true"
+                    >
+                      <span>{SOURCE_META[appearanceSource].shortLabel}</span>
+                      <strong>{STATUS_META[status].label.slice(0, 1)}</strong>
+                    </div>
+                    <div className="appearance-card-body">
+                      <div className="appearance-card-title">
+                        <div><h3>{STATUS_META[status].label}</h3><p>{STATUS_META[status].description}</p></div>
+                        <label className="color-control">
+                          <input
+                            type="color"
+                            value={setting.backgroundColor}
+                            onChange={(event) => void updateStatusAppearance(appearanceSource, status, { backgroundColor: event.currentTarget.value })}
+                            aria-label={`Background color for ${sourceLabel} ${STATUS_META[status].label}`}
+                          />
+                          <output>{setting.backgroundColor}</output>
+                        </label>
+                      </div>
+                      <div className="animation-options" role="group" aria-label={`Animation for ${sourceLabel} ${STATUS_META[status].label}`}>
+                        {ANIMATION_META.map((animation) => (
+                          <button
+                            key={animation.id}
+                            className={setting.animation === animation.id ? "animation-selected" : ""}
+                            onClick={() => void updateStatusAppearance(appearanceSource, status, { animation: animation.id })}
+                            aria-pressed={setting.animation === animation.id}
+                            aria-label={`Use ${animation.label} animation for ${sourceLabel} ${STATUS_META[status].label}`}
+                            title={animation.description}
+                          >
+                            {animation.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
+        </>}
+
         {activeView === "labels" && <>
           <header className="topbar">
             <div>
@@ -449,7 +702,13 @@ export function App() {
             <div className="title-settings-grid">
               {TITLE_STATES.map((status) => (
                 <label className="title-setting-option" key={status}>
-                  <span className={`title-setting-dot swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
+                  <span
+                    className="title-setting-dot"
+                    style={{
+                      "--codex-color": snapshot.displaySettings.statusAppearance.codex[status].backgroundColor,
+                      "--claude-color": snapshot.displaySettings.statusAppearance.claude[status].backgroundColor,
+                    } as React.CSSProperties}
+                  />
                   <span className="title-setting-copy"><strong>{STATUS_META[status].label}</strong><small>{snapshot.displaySettings.showThreadTitle[status] ? "Title shown" : "Compact label only"}</small></span>
                   <span className="label-toggle">
                     <input
@@ -469,14 +728,20 @@ export function App() {
             <div className="panel-heading">
               <div>
                 <h2 id="behavior-heading">Attention signals</h2>
-                <p>Color and motion communicate task state at a glance.</p>
+                <p>Color and motion now follow the per-app choices in Appearance.</p>
               </div>
             </div>
             <div className="behavior-list">
               {TITLE_STATES.map((status) => (
                 <div className="behavior-row" key={status}>
-                  <span className={`behavior-swatch swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
-                  <div><strong>{STATUS_META[status].label}</strong><p>{STATUS_META[status].description}</p></div>
+                  <span
+                    className="behavior-swatch"
+                    style={{
+                      "--codex-color": snapshot.displaySettings.statusAppearance.codex[status].backgroundColor,
+                      "--claude-color": snapshot.displaySettings.statusAppearance.claude[status].backgroundColor,
+                    } as React.CSSProperties}
+                  />
+                  <div><strong>{STATUS_META[status].label}</strong><p>Codex and Claude can use different colors and motion.</p></div>
                 </div>
               ))}
             </div>

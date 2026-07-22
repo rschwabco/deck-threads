@@ -34,7 +34,14 @@ interface ThreadResponse {
 }
 
 type LabelStatus = Exclude<TaskStatus, "off">;
-type DisplaySettings = { showThreadTitle: Record<LabelStatus, boolean> };
+export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse";
+export type StatusAppearance = { backgroundColor: string; animation: KeyAnimation };
+export type KeyTypography = { slotHandleFontSize: number; threadNameFontSize: number };
+type DisplaySettings = {
+  showThreadTitle: Record<LabelStatus, boolean>;
+  statusAppearance: Record<TaskSourceId, Record<LabelStatus, StatusAppearance>>;
+  typography: Record<TaskSourceId, KeyTypography>;
+};
 
 const DEFAULT_TITLE_VISIBILITY: Record<LabelStatus, boolean> = {
   working: false,
@@ -44,12 +51,50 @@ const DEFAULT_TITLE_VISIBILITY: Record<LabelStatus, boolean> = {
   waiting: false,
   error: false,
 };
+const STATUSES: LabelStatus[] = ["working", "question", "unread", "read", "waiting", "error"];
+const DEFAULT_STATUS_APPEARANCE: Record<LabelStatus, StatusAppearance> = {
+  working: { backgroundColor: "#24375F", animation: "sweep" },
+  question: { backgroundColor: "#57321F", animation: "pulse" },
+  unread: { backgroundColor: "#1C4934", animation: "breathe" },
+  read: { backgroundColor: "#2B333F", animation: "still" },
+  waiting: { backgroundColor: "#4A3920", animation: "still" },
+  error: { backgroundColor: "#4D2730", animation: "still" },
+};
+const DEFAULT_TYPOGRAPHY: KeyTypography = { slotHandleFontSize: 17, threadNameFontSize: 12 };
+
+function defaultSourceAppearance() {
+  return Object.fromEntries(STATUSES.map((status) => [status, { ...DEFAULT_STATUS_APPEARANCE[status] }])) as Record<LabelStatus, StatusAppearance>;
+}
+
+function normalizedSourceAppearance(value?: Partial<Record<LabelStatus, StatusAppearance>>) {
+  return Object.fromEntries(STATUSES.map((status) => [status, {
+    ...DEFAULT_STATUS_APPEARANCE[status],
+    ...(value?.[status] || {}),
+  }])) as Record<LabelStatus, StatusAppearance>;
+}
+
+function normalizedTypography(value?: Partial<KeyTypography>) {
+  return {
+    slotHandleFontSize: Math.min(28, Math.max(12, Math.round(Number(value?.slotHandleFontSize) || DEFAULT_TYPOGRAPHY.slotHandleFontSize))),
+    threadNameFontSize: Math.min(20, Math.max(9, Math.round(Number(value?.threadNameFontSize) || DEFAULT_TYPOGRAPHY.threadNameFontSize))),
+  };
+}
 
 class CompanionClient {
   tasks: Array<AgentTask | null> = [];
   online = false;
   scannedAt?: string;
-  displaySettings: DisplaySettings = { showThreadTitle: { ...DEFAULT_TITLE_VISIBILITY } };
+  displaySettings: DisplaySettings = {
+    showThreadTitle: { ...DEFAULT_TITLE_VISIBILITY },
+    statusAppearance: {
+      codex: defaultSourceAppearance(),
+      claude: defaultSourceAppearance(),
+    },
+    typography: {
+      codex: { ...DEFAULT_TYPOGRAPHY },
+      claude: { ...DEFAULT_TYPOGRAPHY },
+    },
+  };
   private refreshPromise?: Promise<void>;
 
   refresh(): Promise<void> {
@@ -82,6 +127,14 @@ class CompanionClient {
           ...DEFAULT_TITLE_VISIBILITY,
           ...(payload.displaySettings?.showThreadTitle || {}),
         },
+        statusAppearance: {
+          codex: normalizedSourceAppearance(payload.displaySettings?.statusAppearance?.codex),
+          claude: normalizedSourceAppearance(payload.displaySettings?.statusAppearance?.claude),
+        },
+        typography: {
+          codex: normalizedTypography(payload.displaySettings?.typography?.codex),
+          claude: normalizedTypography(payload.displaySettings?.typography?.claude),
+        },
       };
       this.online = true;
     } catch {
@@ -92,6 +145,16 @@ class CompanionClient {
 
   showThreadTitle(status: TaskStatus) {
     return status !== "off" && this.displaySettings.showThreadTitle[status];
+  }
+
+  appearanceFor(task: AgentTask) {
+    return task.status === "off"
+      ? { backgroundColor: "#202630", animation: "still" as const }
+      : this.displaySettings.statusAppearance[task.sourceId][task.status];
+  }
+
+  typographyFor(task: AgentTask) {
+    return this.displaySettings.typography[task.sourceId];
   }
 
   async openThread(sourceId: TaskSourceId, threadId: string) {

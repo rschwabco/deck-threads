@@ -71,9 +71,22 @@ export interface SystemSnapshot {
 }
 
 export type LabelConfigurableStatus = Exclude<CodexTaskStatus, "off">;
+export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse";
+
+export interface StatusAppearance {
+  backgroundColor: string;
+  animation: KeyAnimation;
+}
+
+export interface KeyTypography {
+  slotHandleFontSize: number;
+  threadNameFontSize: number;
+}
 
 export interface DisplaySettings {
   showThreadTitle: Record<LabelConfigurableStatus, boolean>;
+  statusAppearance: Record<TaskSourceId, Record<LabelConfigurableStatus, StatusAppearance>>;
+  typography: Record<TaskSourceId, KeyTypography>;
 }
 
 export interface SourceAllocationSettings {

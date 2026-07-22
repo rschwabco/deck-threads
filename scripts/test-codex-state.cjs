@@ -413,14 +413,38 @@ try {
   const settingsPath = path.join(temporaryRoot, "display-settings.json");
   assert.equal(readDisplaySettings(settingsPath).showThreadTitle.read, true);
   assert.equal(readDisplaySettings(settingsPath).showThreadTitle.question, false);
+  assert.equal(readDisplaySettings(settingsPath).statusAppearance.codex.working.backgroundColor, "#24375F");
+  assert.equal(readDisplaySettings(settingsPath).statusAppearance.claude.question.animation, "pulse");
+  assert.deepEqual(readDisplaySettings(settingsPath).typography.codex, { slotHandleFontSize: 17, threadNameFontSize: 12 });
   const savedSettings = writeDisplaySettings(settingsPath, {
     showThreadTitle: { question: true, read: false },
+    statusAppearance: {
+      codex: { working: { backgroundColor: "#123456", animation: "breathe" } },
+      claude: { error: { backgroundColor: "#ABCDEF", animation: "sweep" } },
+    },
+    typography: {
+      codex: { slotHandleFontSize: 24, threadNameFontSize: 16 },
+      claude: { slotHandleFontSize: 14, threadNameFontSize: 10 },
+    },
   });
   assert.equal(savedSettings.showThreadTitle.question, true);
   assert.equal(savedSettings.showThreadTitle.read, false);
   assert.equal(savedSettings.showThreadTitle.working, false);
+  assert.deepEqual(savedSettings.statusAppearance.codex.working, { backgroundColor: "#123456", animation: "breathe" });
+  assert.deepEqual(savedSettings.statusAppearance.claude.error, { backgroundColor: "#ABCDEF", animation: "sweep" });
+  assert.equal(savedSettings.statusAppearance.codex.read.animation, "still");
+  assert.deepEqual(savedSettings.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });
+  assert.deepEqual(savedSettings.typography.claude, { slotHandleFontSize: 14, threadNameFontSize: 10 });
   assert.deepEqual(readDisplaySettings(settingsPath), savedSettings);
   assert.equal(normalizeDisplaySettings({ showThreadTitle: { error: true } }).showThreadTitle.error, true);
+  assert.deepEqual(
+    normalizeDisplaySettings({ statusAppearance: { codex: { working: { backgroundColor: "invalid", animation: "flash" } } } }).statusAppearance.codex.working,
+    { backgroundColor: "#24375F", animation: "sweep" },
+  );
+  assert.deepEqual(
+    normalizeDisplaySettings({ typography: { codex: { slotHandleFontSize: 99, threadNameFontSize: 2 } } }).typography.codex,
+    { slotHandleFontSize: 28, threadNameFontSize: 9 },
+  );
   process.stdout.write("Codex and Claude lifecycle, allocation, display settings, labels, pins, and stable slots passed.\n");
 } finally {
   fs.rmSync(temporaryRoot, { recursive: true, force: true });
