@@ -22,6 +22,12 @@ test("server-renders the complete Deck Threads landing page", async () => {
   assert.match(html, /See what’s active\./);
   assert.match(html, /Press to jump back in\./);
   assert.match(html, /data-parallax-root/);
+  assert.equal((html.match(/<div class="(?:hero-visual|app-frame|download-grid)"[^>]*data-scroll-parallax/g) ?? []).length, 3);
+  assert.match(html, /class="hero-visual"[^>]*data-scroll-parallax/);
+  assert.match(html, /class="app-frame"[^>]*data-scroll-parallax/);
+  assert.match(html, /class="download-grid"[^>]*data-scroll-parallax/);
+  assert.doesNotMatch(html, /class="(?:hero|product|download)-copy"[^>]*data-scroll-parallax/);
+  assert.doesNotMatch(html, /data-parallax-copy/);
   assert.match(html, /Your task data stays on your Mac/);
   assert.match(html, /releases\/download\/v1\.0\.1-beta\.1\/Deck-Threads-Installer\.dmg/);
   assert.match(html, /releases\/download\/v1\.0\.1-beta\.1\/Deck-Threads-Companion\.dmg/);
