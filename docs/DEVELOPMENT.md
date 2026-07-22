@@ -2,7 +2,7 @@
 
 ## Repository layout
 
-- `electron/` contains the macOS companion process, local Codex integration, stable-slot allocator, and loopback HTTP service.
+- `electron/` contains the macOS companion process, local Codex and Claude adapters, source allocator, stable-slot allocator, and loopback HTTP service.
 - `src/` contains the companion's React interface.
 - `stream-deck/src/` contains the plugin, polling client, action behavior, and key renderer.
 - `stream-deck/com.roie.deck-threads.sdPlugin/` contains the plugin manifest and static assets.
@@ -53,7 +53,8 @@ The companion binds only to `127.0.0.1:9876` and exposes:
 
 - `GET /v1/health`
 - `GET /v1/threads`
-- `POST /v1/threads/:id/open`
+- `POST /v1/threads/:source/:id/open`
+- `POST /v1/threads/:id/open` (legacy Codex-only route)
 - `POST /v1/focus`
 
 Do not change the server to listen on all network interfaces. Task titles and project data can be sensitive.

@@ -3,8 +3,15 @@ const BASE_URL = "http://127.0.0.1:9876/v1";
 export type TaskStatus = "working" | "question" | "unread" | "read" | "waiting" | "error" | "off";
 export type TaskPriority = "active" | "pinned" | "recent";
 
-export interface CodexTask {
+export type TaskSourceId = "codex" | "claude";
+
+export interface AgentTask {
   id: string;
+  openId?: string;
+  stableId: string;
+  sourceId: TaskSourceId;
+  sourceName: "Codex" | "Claude";
+  sourceLabel: "CX" | "CL";
   slot: number;
   title: string;
   cwd: string;
@@ -22,7 +29,7 @@ export interface CodexTask {
 
 interface ThreadResponse {
   scannedAt: string;
-  tasks: Array<CodexTask | null>;
+  tasks: Array<AgentTask | null>;
   displaySettings?: DisplaySettings;
 }
 
@@ -39,7 +46,7 @@ const DEFAULT_TITLE_VISIBILITY: Record<LabelStatus, boolean> = {
 };
 
 class CompanionClient {
-  tasks: Array<CodexTask | null> = [];
+  tasks: Array<AgentTask | null> = [];
   online = false;
   scannedAt?: string;
   displaySettings: DisplaySettings = { showThreadTitle: { ...DEFAULT_TITLE_VISIBILITY } };
@@ -58,7 +65,17 @@ class CompanionClient {
       const response = await fetch(`${BASE_URL}/threads`, { signal: AbortSignal.timeout(1400) });
       if (!response.ok) throw new Error(`Companion returned ${response.status}`);
       const payload = (await response.json()) as ThreadResponse;
-      this.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+      this.tasks = Array.isArray(payload.tasks) ? payload.tasks.map((task) => {
+        if (!task) return null;
+        const sourceId = task.sourceId === "claude" ? "claude" : "codex";
+        return {
+          ...task,
+          sourceId,
+          stableId: task.stableId || `${sourceId}:${task.id}`,
+          sourceName: sourceId === "claude" ? "Claude" : "Codex",
+          sourceLabel: sourceId === "claude" ? "CL" : "CX",
+        } as AgentTask;
+      }) : [];
       this.scannedAt = payload.scannedAt;
       this.displaySettings = {
         showThreadTitle: {
@@ -77,11 +94,17 @@ class CompanionClient {
     return status !== "off" && this.displaySettings.showThreadTitle[status];
   }
 
-  async openThread(threadId: string) {
-    const response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(threadId)}/open`, {
+  async openThread(sourceId: TaskSourceId, threadId: string) {
+    let response = await fetch(`${BASE_URL}/threads/${sourceId}/${encodeURIComponent(threadId)}/open`, {
       method: "POST",
       signal: AbortSignal.timeout(2000),
     });
+    if (sourceId === "codex" && response.status === 404) {
+      response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(threadId)}/open`, {
+        method: "POST",
+        signal: AbortSignal.timeout(2000),
+      });
+    }
     if (!response.ok) throw new Error(`Could not open thread (${response.status})`);
   }
 

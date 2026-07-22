@@ -1,13 +1,13 @@
 # Deck Threads setup guide
 
-This guide installs the Deck Threads macOS companion and Stream Deck plugin, then verifies that live Codex Desktop tasks appear on your keys.
+This guide installs the Deck Threads macOS companion and Stream Deck plugin, then verifies that live Codex and Claude Code tasks appear on your keys.
 
 ## Before you start
 
 You need:
 
 - macOS 13 Ventura or later.
-- Codex Desktop installed in `/Applications` and signed in.
+- Codex Desktop installed in `/Applications` and signed in, an installed Claude Code or Claude Desktop, or both.
 - Stream Deck 7.1 or later with a keypad device connected.
 - Permission to install an app in `/Applications` and a Stream Deck plugin.
 
@@ -52,27 +52,35 @@ You can use fewer than eight keys. Each key still represents the corresponding s
 
 ## 4. Verify the connection
 
-1. Open Codex Desktop and make sure at least one task is visible in its sidebar.
+1. Open Codex Desktop and/or start a Claude Code session. Claude tasks are active local Code sessions, not ordinary Claude chat tabs.
 2. Open Deck Threads from the menu-bar item.
-3. Confirm that **Codex Desktop**, **Local companion**, and **Stream Deck** report connected.
+3. Confirm that the agent apps you use, **Local companion**, and **Stream Deck** report connected.
 4. Select any Task slot action in the Stream Deck app. Its setup panel should say **Companion connected**.
-5. Press a populated task key. Codex Desktop should open the matching task.
+5. Press a populated task key. A blue border identifies Codex, while an orange border identifies Claude; the matching app should open the task.
 
 Keys refresh automatically. You do not need a refresh action.
 
 ## Reading the keys
 
 - **Working** uses a prominent animated field and minimal text.
-- **Question** turns bright orange when Codex is waiting for your answer.
+- **Question** uses a high-attention status surface when Codex or Claude is waiting for your answer.
 - **Unread** uses a stronger attention animation to signal completed work you have not opened.
 - **Read** stays calm and does not show a `READ` label.
 - **Waiting** and **Error** use their own status colors.
 - The compact label combines a project abbreviation and that task's number inside the project, such as `DT1`.
+- Task numbers remain fixed when status, recency, or priority changes. They follow the saved manual order when you rearrange tasks inside a Codex project.
 - A small marker identifies tasks from pinned projects.
+- The border identifies the owning app: blue for Codex and orange for Claude. The key background indicates status.
 
 Open the Deck Threads companion, select **Key labels** in the sidebar, and use **Show thread titles** to choose whether each state includes the full task title. These choices are saved on your Mac and picked up by the Stream Deck plugin automatically.
 
 Recently active tasks are selected first, followed by tasks from pinned projects. Once a selected task owns a slot, it does not move just because another task's priority changes; it only leaves when it is no longer among the selected eight.
+
+## Choose how keys are allocated
+
+Open **Sources** in the Deck Threads companion. The default reservation is four Codex keys and four Claude keys. Select any split from all-Claude to all-Codex.
+
+**Fill unused keys with active tasks** is on by default. Reservations remain balanced when both apps have enough work, but the other app can borrow unused keys. For example, six active Codex tasks and two active Claude tasks appear as 6/2 instead of leaving two Codex tasks hidden. Turn the setting off for a strict per-app limit.
 
 ## Start at login
 
@@ -85,7 +93,7 @@ Deck Threads enables launch at login the first time the packaged app starts. You
 3. Replace the existing app in Applications.
 4. Double-click the newer `.streamDeckPlugin` file and approve replacement if the release includes one.
 
-Your stable slot assignments are stored in the app's local data folder and survive normal updates.
+Your stable slot assignments and source allocation are stored in the app's local data folder and survive normal updates.
 
 ## Uninstalling
 

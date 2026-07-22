@@ -110,16 +110,63 @@ function abbreviateProjectName(projectName) {
   return words.slice(0, 2).map((word) => word[0].toUpperCase()).join("");
 }
 
-function projectNameForThread(state, threadId, cwd) {
+function projectForThread(state, threadId, cwd) {
   const assignment = state["thread-project-assignments"]?.[threadId];
   const assignedProject = assignment?.projectId
     ? state["local-projects"]?.[assignment.projectId]
     : undefined;
-  if (assignedProject?.name) return assignedProject.name;
+  if (assignment?.projectId) {
+    return {
+      key: `project:${assignment.projectId}`,
+      name: assignedProject?.name || path.basename(cwd || "") || "Codex",
+    };
+  }
 
   const workspaceLabel = state["electron-workspace-root-labels"]?.[cwd];
-  if (workspaceLabel) return workspaceLabel;
-  return path.basename(cwd || "") || "Codex";
+  return {
+    key: `workspace:${cwd || "codex"}`,
+    name: workspaceLabel || path.basename(cwd || "") || "Codex",
+  };
+}
+
+function assignProjectThreadNumbers(rows, state) {
+  const rowsByProject = new Map();
+
+  for (const row of rows) {
+    const project = projectForThread(state, row.id, row.cwd);
+    const projectRows = rowsByProject.get(project.key) || [];
+    projectRows.push(row);
+    rowsByProject.set(project.key, projectRows);
+  }
+
+  const numberByThreadId = new Map();
+  const savedOrders = state["sidebar-project-thread-orders"] || {};
+
+  for (const [projectKey, projectRows] of rowsByProject) {
+    const fallbackOrder = [...projectRows].sort((left, right) =>
+      (left.createdAt || 0) - (right.createdAt || 0)
+        || left.id.localeCompare(right.id),
+    );
+    const projectId = projectKey.startsWith("project:")
+      ? projectKey.slice("project:".length)
+      : undefined;
+    const manualThreadIds = projectId && Array.isArray(savedOrders[projectId]?.threadIds)
+      ? savedOrders[projectId].threadIds
+      : [];
+    const rowById = new Map(fallbackOrder.map((row) => [row.id, row]));
+    const orderedRows = [];
+
+    for (const threadId of manualThreadIds) {
+      const row = rowById.get(threadId);
+      if (!row) continue;
+      orderedRows.push(row);
+      rowById.delete(threadId);
+    }
+    orderedRows.push(...fallbackOrder.filter((row) => rowById.has(row.id)));
+    orderedRows.forEach((row, index) => numberByThreadId.set(row.id, index + 1));
+  }
+
+  return numberByThreadId;
 }
 
 function prioritizeTasks(tasks, nowMs = Date.now(), limit = 8) {
@@ -248,12 +295,14 @@ function readCodexTasks(options = {}) {
         id,
         title,
         cwd,
+        COALESCE(created_at_ms, created_at * 1000) AS createdAt,
         recency_at_ms AS recencyAt,
         updated_at_ms AS updatedAt,
-        thread_source AS threadSource
+        thread_source AS threadSource,
+        archived
       FROM threads
-      WHERE archived = 0
-        AND thread_source IN ('user', 'automation')
+      WHERE thread_source IN ('user', 'automation')
+        AND COALESCE(archived, 0) = 0
       ORDER BY recency_at_ms DESC
     `).all();
 
@@ -265,6 +314,7 @@ function readCodexTasks(options = {}) {
       || pinnedThreadIds.has(row.id)
       || Math.max(row.recencyAt || 0, row.updatedAt || 0) >= activeCutoff,
     );
+    const projectThreadNumbers = assignProjectThreadNumbers(rows, globalState);
     const candidates = candidateRows.map((row) => {
       const lifecycle = logsDb
         ? readThreadStatus(logsDb, row.id, nowSeconds, unreadThreadIds)
@@ -273,7 +323,8 @@ function readCodexTasks(options = {}) {
             updatedAt: row.updatedAt,
             turnId: undefined,
           };
-      const projectName = projectNameForThread(globalState, row.id, row.cwd);
+      const project = projectForThread(globalState, row.id, row.cwd);
+      const projectName = project.name;
       const projectAbbreviation = abbreviateProjectName(projectName);
       return {
         id: row.id,
@@ -281,6 +332,7 @@ function readCodexTasks(options = {}) {
         cwd: row.cwd,
         projectName,
         projectAbbreviation,
+        projectThreadNumber: projectThreadNumbers.get(row.id) || 1,
         pinned: pinnedThreadIds.has(row.id),
         status: lifecycle.status,
         color: STATUS_COLORS[lifecycle.status],
@@ -290,15 +342,11 @@ function readCodexTasks(options = {}) {
         threadSource: row.threadSource,
       };
     });
-    const projectThreadCounts = new Map();
     const tasks = prioritizeTasks(candidates, nowMs).map((task, index) => {
-      const projectThreadNumber = (projectThreadCounts.get(task.projectName) || 0) + 1;
-      projectThreadCounts.set(task.projectName, projectThreadNumber);
       return {
         ...task,
         slot: index,
-        projectThreadNumber,
-        projectLabel: `${task.projectAbbreviation}${projectThreadNumber}`,
+        projectLabel: `${task.projectAbbreviation}${task.projectThreadNumber}`,
       };
     });
 
@@ -318,6 +366,7 @@ module.exports = {
   STATUS_COLORS,
   ACTIVE_PRIORITY_WINDOW_MS,
   abbreviateProjectName,
+  assignProjectThreadNumbers,
   prioritizeTasks,
   readCodexTasks,
   readThreadStatus,

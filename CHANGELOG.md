@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added local Claude Code task monitoring alongside Codex, including sidebar titles, pinned tasks, archived-task filtering, lifecycle status, and reliable desktop task switching.
+- Added configurable Codex/Claude key reservations with a 4/4 default and optional borrowing of unused capacity.
+- Updated companion and Stream Deck keys to use blue or orange source borders with muted status-colored surfaces.
+- Kept compact project task numbers stable across status and priority changes.
+
 ## 1.0.0 — 2026-07-20
 
 - Introduced the Deck Threads macOS companion and Stream Deck plugin.

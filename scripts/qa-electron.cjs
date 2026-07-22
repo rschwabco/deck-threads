@@ -26,12 +26,22 @@ async function captureWindow(application, outputPath) {
 
 (async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "deck-threads-qa-"));
+  const bridgePort = 19876;
+  const outputDir = path.join(process.cwd(), "output", "playwright");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const screenshots = {
+    wide: path.join(outputDir, "deck-threads-wide.png"),
+    statuses: path.join(outputDir, "deck-threads-statuses.png"),
+    sources: path.join(outputDir, "deck-threads-sources.png"),
+    labels: path.join(outputDir, "deck-threads-key-labels.png"),
+    compact: path.join(outputDir, "deck-threads-compact.png"),
+  };
   const application = await electron.launch({
     args: ["."],
     cwd: process.cwd(),
     env: {
       ...process.env,
-      CODEX_BRIDGE_API_DISABLED: "1",
+      DECK_THREADS_BRIDGE_PORT: String(bridgePort),
       DECK_THREADS_USER_DATA_DIR: userDataDir,
     },
   });
@@ -42,6 +52,14 @@ async function captureWindow(application, outputPath) {
     await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
     await page.waitForFunction(() => /Working|Question|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
 
+    const healthResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/health`);
+    assert.equal(healthResponse.ok, true);
+    const threadResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/threads`);
+    assert.equal(threadResponse.ok, true);
+    const threadPayload = await threadResponse.json();
+    assert.equal(threadPayload.tasks.length, 8);
+    assert.ok(threadPayload.tasks.filter(Boolean).every((task) => task.sourceId === "codex" || task.sourceId === "claude"));
+
     const title = await page.title();
     const taskSlots = page.locator(".task-key");
     const taskCount = await taskSlots.count();
@@ -51,9 +69,12 @@ async function captureWindow(application, outputPath) {
     assert.equal(title, "Deck Threads");
     assert.equal(taskCount, 8);
     assert.match(firstTaskLabel || "", /Working|Question|Unread|Read/);
-    assert.equal(await page.locator(".sidebar nav .nav-item").count(), 4);
+    assert.equal(await page.locator(".sidebar nav .nav-item").count(), 5);
+    assert.equal(await page.locator(".source-badge").count(), 0);
+    assert.ok(await page.locator(".task-key.task-source-codex").count() > 0);
+    assert.ok(await page.locator(".task-key.task-source-claude").count() > 0);
 
-    const invalidOpen = await page.evaluate(() => window.bridgeApi.openCodexThread("not-a-thread-id", "Invalid task"));
+    const invalidOpen = await page.evaluate(() => window.bridgeApi.openTask("claude", "not-a-thread-id", "Invalid task"));
     assert.equal(invalidOpen.ok, false);
     assert.match(invalidOpen.message, /invalid task ID/i);
 
@@ -63,13 +84,76 @@ async function captureWindow(application, outputPath) {
     const wideLayout = await layoutMetrics(page);
     assert.ok(wideLayout.bodyScrollWidth <= wideLayout.bodyClientWidth, `Wide layout overflow: ${JSON.stringify(wideLayout)}`);
     assert.ok(wideLayout.documentScrollWidth <= wideLayout.documentClientWidth, `Wide document overflow: ${JSON.stringify(wideLayout)}`);
-    await captureWindow(application, "/tmp/deck-threads-wide.png");
+    await captureWindow(application, screenshots.wide);
+
+    await page.evaluate(() => {
+      const states = [
+        ["working", "Working", "#4169FF"],
+        ["question", "Question", "#FF6D00"],
+        ["unread", "Unread", "#2ED47A"],
+        ["read", "Read", "#D9DEE8"],
+        ["waiting", "Waiting", "#F5A742"],
+        ["error", "Error", "#FF5C70"],
+      ];
+      const buttons = Array.from(document.querySelectorAll(".task-key")).slice(0, states.length);
+      buttons.forEach((button, index) => {
+        const [state, label, color] = states[index];
+        button.classList.remove("task-working", "task-question", "task-unread", "task-read", "task-waiting", "task-error", "task-off");
+        button.classList.remove("task-source-codex", "task-source-claude");
+        button.classList.add(`task-${state}`);
+        button.classList.add(index < 3 ? "task-source-codex" : "task-source-claude");
+        button.style.setProperty("--task-color", color);
+        const statusLine = button.querySelector("small");
+        if (statusLine) statusLine.textContent = label;
+      });
+    });
+    await page.waitForTimeout(220);
+    const statusBorders = await page.locator(".task-key").evaluateAll((buttons) =>
+      buttons.slice(0, 6).map((button) => getComputedStyle(button).borderTopColor),
+    );
+    assert.deepEqual(statusBorders, [
+      "rgb(102, 130, 255)",
+      "rgb(102, 130, 255)",
+      "rgb(102, 130, 255)",
+      "rgb(225, 132, 82)",
+      "rgb(225, 132, 82)",
+      "rgb(225, 132, 82)",
+    ]);
+    const statusSurfaces = await page.locator(".task-key").evaluateAll((buttons) =>
+      buttons.slice(0, 6).map((button) => getComputedStyle(button).getPropertyValue("--status-surface-a").trim()),
+    );
+    assert.deepEqual(statusSurfaces, ["#24375f", "#57321f", "#1c4934", "#2b333f", "#4a3920", "#4d2730"]);
+    await captureWindow(application, screenshots.statuses);
+    await page.reload();
+    await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
+
+    await page.getByRole("button", { name: "Sources" }).click();
+    await page.getByRole("heading", { name: "Reserved keys" }).waitFor();
+    const adaptiveToggle = page.getByRole("checkbox", { name: "Fill unused keys with active tasks" });
+    const adaptiveControl = page.locator(".source-toggle");
+    assert.equal(await adaptiveToggle.isChecked(), true);
+    await page.getByRole("button", { name: "Reserve 6 keys for Codex and 2 for Claude" }).click();
+    await page.waitForTimeout(350);
+    const allocationPath = path.join(userDataDir, "source-allocation.json");
+    const persistedAllocation = JSON.parse(fs.readFileSync(allocationPath, "utf8"));
+    assert.deepEqual(persistedAllocation.reservations, { codex: 6, claude: 2 });
+    assert.equal(persistedAllocation.fillUnused, true);
+    await adaptiveControl.click();
+    await page.waitForTimeout(200);
+    assert.equal(JSON.parse(fs.readFileSync(allocationPath, "utf8")).fillUnused, false);
+    await adaptiveControl.click();
+    await page.waitForTimeout(350);
+    assert.equal(JSON.parse(fs.readFileSync(allocationPath, "utf8")).fillUnused, true);
+    assert.equal(await adaptiveToggle.isChecked(), true);
+    await captureWindow(application, screenshots.sources);
 
     await page.getByRole("button", { name: "Connections" }).click();
     await page.getByRole("heading", { name: "Connection status" }).waitFor();
     assert.equal(await page.locator(".task-grid").count(), 0);
     const streamDeckStatus = (await page.locator(".health-item").filter({ hasText: "Stream Deck" }).textContent())?.replace(/\s+/g, " ").trim();
     assert.match(streamDeckStatus || "", /Online|Offline|Error/);
+    const claudeStatus = (await page.locator(".health-item").filter({ hasText: "Claude" }).textContent())?.replace(/\s+/g, " ").trim();
+    assert.match(claudeStatus || "", /Online|Offline|Error/);
 
     await page.getByRole("button", { name: "Key labels" }).click();
     await page.getByRole("heading", { name: "Show thread titles" }).waitFor();
@@ -87,7 +171,7 @@ async function captureWindow(application, outputPath) {
     await page.waitForTimeout(150);
     const persistedSettings = JSON.parse(fs.readFileSync(path.join(userDataDir, "display-settings.json"), "utf8"));
     assert.equal(persistedSettings.showThreadTitle.question, true);
-    await captureWindow(application, "/tmp/deck-threads-key-labels.png");
+    await captureWindow(application, screenshots.labels);
 
     await page.getByRole("button", { name: "Activity" }).click();
     await page.getByRole("heading", { name: "Recent events" }).waitFor();
@@ -102,17 +186,19 @@ async function captureWindow(application, outputPath) {
     const compactLayout = await layoutMetrics(page);
     assert.ok(compactLayout.bodyScrollWidth <= compactLayout.bodyClientWidth, `Compact layout overflow: ${JSON.stringify(compactLayout)}`);
     assert.ok(compactLayout.documentScrollWidth <= compactLayout.documentClientWidth, `Compact document overflow: ${JSON.stringify(compactLayout)}`);
-    await captureWindow(application, "/tmp/deck-threads-compact.png");
+    await captureWindow(application, screenshots.compact);
 
     process.stdout.write(`${JSON.stringify({
       title,
       source,
       firstTaskLabel,
       streamDeckStatus,
+      claudeStatus,
       questionTitleEnabled: await questionToggle.isChecked(),
+      sourceAllocation: persistedAllocation,
       wideLayout,
       compactLayout,
-      screenshots: ["/tmp/deck-threads-wide.png", "/tmp/deck-threads-key-labels.png", "/tmp/deck-threads-compact.png"],
+      screenshots: Object.values(screenshots),
     }, null, 2)}\n`);
   } finally {
     await application.close();

@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("bridgeApi", {
   getSnapshot: () => ipcRenderer.invoke("bridge:get-snapshot"),
   refresh: () => ipcRenderer.invoke("bridge:refresh"),
   setDisplaySettings: (value) => ipcRenderer.invoke("bridge:set-display-settings", value),
+  setSourceAllocation: (value) => ipcRenderer.invoke("bridge:set-source-allocation", value),
+  openTask: (sourceId, threadId, title, openId) => ipcRenderer.invoke("bridge:open-task", sourceId, threadId, title, openId),
   openCodexThread: (threadId, title) => ipcRenderer.invoke("bridge:open-codex-thread", threadId, title),
   onEvent: (callback) => {
     const handler = (_event, payload) => callback(payload);

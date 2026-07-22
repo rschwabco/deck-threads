@@ -8,30 +8,40 @@ import {
   Monitor,
   Plug,
   PushPinSimple,
+  SlidersHorizontal,
   SquaresFour,
   TerminalWindow,
   TextAa,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import type { CodexTaskStatus, EventEntry, HealthState, LabelConfigurableStatus, SystemSnapshot } from "./types";
+import type {
+  CodexTaskStatus,
+  EventEntry,
+  HealthState,
+  LabelConfigurableStatus,
+  SourceAllocationSettings,
+  SystemSnapshot,
+} from "./types";
 
 const STATUS_META: Record<CodexTaskStatus, { label: string; color: string; description: string }> = {
-  working: { label: "Working", color: "#4169FF", description: "A calm cobalt flow while Codex is active." },
-  question: { label: "Question", color: "#FF6D00", description: "Bright orange when Codex is waiting for your answer." },
+  working: { label: "Working", color: "#4169FF", description: "A calm cobalt flow while an agent is active." },
+  question: { label: "Question", color: "#FF6D00", description: "Bright orange when an agent is waiting for your answer." },
   unread: { label: "Unread", color: "#2ED47A", description: "A brighter green signal when work finishes." },
   read: { label: "Read", color: "#D9DEE8", description: "A quiet neutral key after you view the result." },
-  waiting: { label: "Waiting", color: "#F5A742", description: "Amber when Codex needs your attention." },
+  waiting: { label: "Waiting", color: "#F5A742", description: "Amber when an agent needs your attention." },
   error: { label: "Error", color: "#FF5C70", description: "Red when a task cannot continue." },
   off: { label: "Empty", color: "#303746", description: "An unused slot stays dark." },
 };
 
 const TITLE_STATES: LabelConfigurableStatus[] = ["working", "question", "unread", "read", "waiting", "error"];
-type ActiveView = "threads" | "connections" | "labels" | "activity";
+type ActiveView = "threads" | "sources" | "connections" | "labels" | "activity";
 
 const EMPTY_SNAPSHOT: SystemSnapshot = {
   scannedAt: new Date(0).toISOString(),
-  codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", tasks: [] },
+  tasks: [],
+  codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", taskCount: 0 },
+  claude: { state: "missing", processCount: 0, detail: "Looking for Claude sessions.", source: "Scanning", taskCount: 0 },
   streamDeck: { state: "missing", processCount: 0, pluginConnected: false, detail: "Looking for Stream Deck." },
   companion: { state: "connected", detail: "Starting the local task service." },
   displaySettings: {
@@ -44,6 +54,7 @@ const EMPTY_SNAPSHOT: SystemSnapshot = {
       error: false,
     },
   },
+  allocationSettings: { reservations: { codex: 4, claude: 4 }, fillUnused: true },
 };
 
 function stateLabel(state: HealthState) {
@@ -153,11 +164,11 @@ export function App() {
   }, [loadSnapshot]);
 
   const taskCounts = useMemo(() => ({
-    working: snapshot.codex.tasks.filter((task) => task?.status === "working").length,
-    question: snapshot.codex.tasks.filter((task) => task?.status === "question").length,
-    unread: snapshot.codex.tasks.filter((task) => task?.status === "unread").length,
-    pinned: snapshot.codex.tasks.filter((task) => task?.pinned).length,
-  }), [snapshot.codex.tasks]);
+    working: snapshot.tasks.filter((task) => task?.status === "working").length,
+    attention: snapshot.tasks.filter((task) => task?.status === "question" || task?.status === "unread" || task?.status === "waiting").length,
+    codex: snapshot.tasks.filter((task) => task?.sourceId === "codex").length,
+    claude: snapshot.tasks.filter((task) => task?.sourceId === "claude").length,
+  }), [snapshot.tasks]);
 
   const updateTitleVisibility = async (status: LabelConfigurableStatus, visible: boolean) => {
     const nextSettings = {
@@ -193,10 +204,30 @@ export function App() {
     }
   };
 
+  const updateSourceAllocation = async (nextSettings: SourceAllocationSettings) => {
+    setSnapshot((current) => ({ ...current, allocationSettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setSourceAllocation(nextSettings);
+      setSnapshot((current) => ({ ...current, allocationSettings: saved }));
+      await loadSnapshot();
+    } catch (error) {
+      const failure = {
+        id: `allocation-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save task allocation",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
   const openTask = async (slot: number) => {
-    const task = snapshot.codex.tasks[slot];
+    const task = snapshot.tasks[slot];
     if (!task) return;
-    const result = await window.bridgeApi.openCodexThread(task.id, task.title);
+    const result = await window.bridgeApi.openTask(task.sourceId, task.id, task.title, task.openId);
     setActionResult(result);
     window.setTimeout(() => loadSnapshot().catch(() => undefined), 500);
   };
@@ -216,6 +247,7 @@ export function App() {
 
         <nav aria-label="Deck Threads">
           <button className={`nav-item ${activeView === "threads" ? "nav-active" : ""}`} onClick={() => setActiveView("threads")}><SquaresFour /> Threads</button>
+          <button className={`nav-item ${activeView === "sources" ? "nav-active" : ""}`} onClick={() => setActiveView("sources")}><SlidersHorizontal /> Sources</button>
           <button className={`nav-item ${activeView === "connections" ? "nav-active" : ""}`} onClick={() => setActiveView("connections")}><Plug /> Connections</button>
           <button className={`nav-item ${activeView === "labels" ? "nav-active" : ""}`} onClick={() => setActiveView("labels")}><TextAa /> Key labels</button>
           <button className={`nav-item ${activeView === "activity" ? "nav-active" : ""}`} onClick={() => setActiveView("activity")}><TerminalWindow /> Activity</button>
@@ -233,8 +265,8 @@ export function App() {
         <header className="topbar">
           <div>
             <p className="section-kicker">Live task surface</p>
-            <h1>Your Codex work, on deck.</h1>
-            <p className="topbar-copy">See what is active, spot finished work, and open any task with one press.</p>
+            <h1>Your agent work, on deck.</h1>
+            <p className="topbar-copy">See active Codex and Claude work, spot tasks that need attention, and open either app with one press.</p>
           </div>
           <div className="topbar-actions">
             <span className="scan-time">Updated {formatTime(snapshot.scannedAt)}</span>
@@ -247,33 +279,34 @@ export function App() {
 
         <section className="summary-strip" aria-label="Task summary">
           <div><strong>{taskCounts.working}</strong><span>working</span></div>
-          <div><strong>{taskCounts.question}</strong><span>questions</span></div>
-          <div><strong>{taskCounts.unread}</strong><span>unread</span></div>
-          <div><strong>{taskCounts.pinned}</strong><span>pinned</span></div>
-          <p>{snapshot.codex.source}</p>
+          <div><strong>{taskCounts.attention}</strong><span>attention</span></div>
+          <div><strong>{taskCounts.codex}</strong><span>Codex</span></div>
+          <div><strong>{taskCounts.claude}</strong><span>Claude</span></div>
+          <p>{snapshot.allocationSettings.fillUnused ? "Adaptive allocation" : "Strict allocation"}</p>
         </section>
 
         <section className="task-panel" aria-labelledby="task-heading">
           <div className="panel-heading">
             <div>
               <h2 id="task-heading">Eight live task keys</h2>
-              <p>Working tasks keep their key. Open slots follow recent activity first, then pinned projects. Press any task here or on your Stream Deck to open it in Codex.</p>
+              <p>Tasks keep stable keys across refreshes. Press any task here or on your Stream Deck to open it in the app that owns it.</p>
             </div>
           </div>
 
           <div className="task-grid">
-            {Array.from({ length: 8 }, (_, index) => snapshot.codex.tasks[index]).map((task, index) => {
+            {Array.from({ length: 8 }, (_, index) => snapshot.tasks[index]).map((task, index) => {
               const status = STATUS_META[task?.status || "off"];
               return (
                 <button
-                  className={`task-key task-${task?.status || "off"}`}
-                  key={task?.id || `empty-${index}`}
+                  className={`task-key task-${task?.status || "off"}${task ? ` task-source-${task.sourceId}` : ""}`}
+                  key={task?.stableId || `empty-${index}`}
                   onClick={() => openTask(index)}
                   disabled={!task}
                   data-thread-id={task?.id}
+                  data-source-id={task?.sourceId}
                   data-cwd={task?.cwd}
                   style={{ "--task-color": status.color } as React.CSSProperties}
-                  aria-label={task ? `Open task slot ${index + 1} in Codex: ${task.title}, ${status.label}` : `Task slot ${index + 1}: empty`}
+                  aria-label={task ? `Open task slot ${index + 1} in ${task.sourceName}: ${task.title}, ${status.label}` : `Task slot ${index + 1}: empty`}
                 >
                   <span className="task-key-topline" aria-hidden="true" />
                   <span className="task-key-meta">
@@ -293,12 +326,78 @@ export function App() {
         </section>
         </>}
 
+        {activeView === "sources" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Eight key allocation</p>
+              <h1>Task sources</h1>
+              <p className="topbar-copy">Reserve keys for each app, then decide whether active work may borrow unused keys.</p>
+            </div>
+          </header>
+
+          <section className="source-settings-panel page-panel" aria-labelledby="source-settings-heading">
+            <div className="panel-heading">
+              <div>
+                <h2 id="source-settings-heading">Reserved keys</h2>
+                <p>Choose the baseline split. The two reservations always add up to eight.</p>
+              </div>
+              <div className="allocation-total" aria-label="Current reserved key allocation">
+                <span><b>{snapshot.allocationSettings.reservations.codex}</b> Codex</span>
+                <span><b>{snapshot.allocationSettings.reservations.claude}</b> Claude</span>
+              </div>
+            </div>
+            <div className="allocation-scale" role="group" aria-label="Number of keys reserved for Codex">
+              {Array.from({ length: 9 }, (_, codexCount) => (
+                <button
+                  key={codexCount}
+                  className={snapshot.allocationSettings.reservations.codex === codexCount ? "allocation-selected" : ""}
+                  onClick={() => void updateSourceAllocation({
+                    ...snapshot.allocationSettings,
+                    reservations: { codex: codexCount, claude: 8 - codexCount },
+                  })}
+                  aria-pressed={snapshot.allocationSettings.reservations.codex === codexCount}
+                  aria-label={`Reserve ${codexCount} keys for Codex and ${8 - codexCount} for Claude`}
+                >
+                  {codexCount}
+                </button>
+              ))}
+            </div>
+            <div className="allocation-axis" aria-hidden="true"><span>All Claude</span><span>Even split</span><span>All Codex</span></div>
+          </section>
+
+          <section className="source-settings-panel borrowing-panel" aria-labelledby="borrowing-heading">
+            <div className="borrowing-copy">
+              <span className="source-setting-icon"><ArrowsClockwise /></span>
+              <div>
+                <h2 id="borrowing-heading">Fill unused keys with active tasks</h2>
+                <p>When one app has fewer tasks than its reservation, the other app can use those open keys. A 4/4 split becomes 6 Codex and 2 Claude when that is what is active.</p>
+              </div>
+            </div>
+            <label className="label-toggle source-toggle">
+              <input
+                type="checkbox"
+                checked={snapshot.allocationSettings.fillUnused}
+                onChange={(event) => void updateSourceAllocation({
+                  ...snapshot.allocationSettings,
+                  fillUnused: event.currentTarget.checked,
+                })}
+                aria-label="Fill unused keys with active tasks"
+              />
+              <span aria-hidden="true" />
+            </label>
+          </section>
+
+          <p className="allocation-preview" role="status">
+            Currently showing <strong>{taskCounts.codex} Codex</strong> and <strong>{taskCounts.claude} Claude</strong> tasks across eight keys.
+          </p>
+        </>}
+
         {activeView === "connections" && <>
           <header className="topbar">
             <div>
               <p className="section-kicker">Local services</p>
               <h1>Connections</h1>
-              <p className="topbar-copy">Confirm that Codex Desktop, Stream Deck, and the local companion can see each other.</p>
+              <p className="topbar-copy">Confirm that Codex, Claude, Stream Deck, and the local companion can see each other.</p>
             </div>
             <div className="topbar-actions">
               <span className="scan-time">Updated {formatTime(snapshot.scannedAt)}</span>
@@ -313,16 +412,17 @@ export function App() {
             <div className="panel-heading">
               <div>
                 <h2 id="connection-heading">Connection status</h2>
-                <p>The companion stays local. It reads Codex task state and serves it only to Stream Deck on this Mac.</p>
+                <p>The companion stays local. It reads agent task state and serves it only to Stream Deck on this Mac.</p>
               </div>
             </div>
             {loading ? (
               <div className="health-loading" aria-label="Checking connections">
-                {[0, 1, 2].map((item) => <div className="skeleton" key={item} />)}
+                {[0, 1, 2, 3].map((item) => <div className="skeleton" key={item} />)}
               </div>
             ) : (
               <div className="health-list">
                 <HealthItem icon={<Command />} label="Codex Desktop" state={snapshot.codex.state} detail={snapshot.codex.detail} />
+                <HealthItem icon={<TerminalWindow />} label="Claude" state={snapshot.claude.state} detail={snapshot.claude.detail} />
                 <HealthItem icon={<Monitor />} label="Stream Deck" state={snapshot.streamDeck.state} detail={snapshot.streamDeck.detail} />
                 <HealthItem icon={<Plug />} label="Local companion" state={snapshot.companion.state} detail={snapshot.companion.detail} />
               </div>
@@ -335,7 +435,7 @@ export function App() {
             <div>
               <p className="section-kicker">Stream Deck appearance</p>
               <h1>Key labels</h1>
-              <p className="topbar-copy">Choose when a Stream Deck key includes the full Codex task name.</p>
+              <p className="topbar-copy">Choose when a Stream Deck key includes the full Codex or Claude task name.</p>
             </div>
           </header>
 
@@ -404,7 +504,7 @@ export function App() {
             {events.length === 0 ? (
               <div className="empty-state">
                 <TerminalWindow />
-                <div><strong>No activity yet</strong><p>Task changes will appear here as Codex works.</p></div>
+                <div><strong>No activity yet</strong><p>Codex and Claude task changes will appear here.</p></div>
               </div>
             ) : events.map((event) => (
               <div className="event-row" key={event.id}>

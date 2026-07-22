@@ -52,7 +52,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
       return;
     }
     try {
-      await companionClient.openThread(task.id);
+      await companionClient.openThread(task.sourceId, task.id);
       await event.action.showOk();
       setTimeout(() => void refreshAllActions(), 650);
     } catch {
@@ -93,7 +93,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
         ? frame
         : 0;
     const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-    const signature = `${companionClient.online}:${task?.id}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${animatedFrame}`;
+    const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${animatedFrame}`;
     if (this.signatures.get(current.id) === signature) return;
     try {
       const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle);

@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "author": "Roie",
-  "description": "A local companion that brings live Codex Desktop tasks to Stream Deck.",
+  "description": "A local companion that brings live Codex and Claude tasks to Stream Deck.",
   "homepage": "https://github.com/rschwabco/deck-threads#readme",
   "repository": {
     "type": "git",

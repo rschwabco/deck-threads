@@ -7,7 +7,7 @@ For reproducible bugs or feature requests, [open a GitHub issue](https://github.
 - macOS version and Mac architecture.
 - Stream Deck app version and device model.
 - Deck Threads companion and plugin versions.
-- Whether Codex Desktop, the companion, and Stream Deck each show as connected.
+- Whether Codex Desktop and/or Claude, the companion, and Stream Deck each show as connected.
 - Exact steps to reproduce and what you expected.
 - Sanitized logs when relevant.
 
