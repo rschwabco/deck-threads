@@ -88,9 +88,9 @@ jobs:
           npm run test:bundled-plugin
           npm run test:installer-postinstall
           npm run test:state
+          npm run release:verify-plugin-version
           npm run streamdeck:pack
           npm run streamdeck:validate
-          npm run release:verify-plugin-version
 
       - name: Build signed and notarized universal app
         run: npm run release:mac
