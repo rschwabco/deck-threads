@@ -74,7 +74,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -s "$keychain_path"
-          installer_identity="$(security find-identity -v -p basic "$keychain_path" | sed -n 's/^[[:space:]]*[0-9][0-9]*) [0-9A-F]* "\(Developer ID Installer:.*\)"$/\1/p' | head -1)"
+          installer_identity="$(security find-identity -v -p basic "$keychain_path" | awk -F'"' '/Developer ID Installer:/{print $2; exit}')"
           if [[ -z "$installer_identity" ]]; then
             echo "The imported keychain does not contain a Developer ID Installer identity." >&2
             exit 1
