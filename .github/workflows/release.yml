@@ -74,6 +74,13 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -s "$keychain_path"
+          installer_identity="$(security find-identity -v -p basic "$keychain_path" | sed -n 's/^[[:space:]]*[0-9][0-9]*) [0-9A-F]* "\(Developer ID Installer:.*\)"$/\1/p' | head -1)"
+          if [[ -z "$installer_identity" ]]; then
+            echo "The imported keychain does not contain a Developer ID Installer identity." >&2
+            exit 1
+          fi
+          echo "DECK_THREADS_INSTALLER_IDENTITY=$installer_identity" >> "$GITHUB_ENV"
+          echo "DECK_THREADS_SIGNING_KEYCHAIN=$keychain_path" >> "$GITHUB_ENV"
           rm -f "$app_certificate_path" "$installer_certificate_path"
 
       - name: Install dependencies
@@ -96,8 +103,6 @@ jobs:
         run: npm run release:mac
 
       - name: Build, sign, and notarize installers
-        env:
-          DECK_THREADS_INSTALLER_IDENTITY: "Developer ID Installer: Roie Cohen (W7F2CX5957)"
         run: |
           npm run release:installers
           npm run release:notarize-installers

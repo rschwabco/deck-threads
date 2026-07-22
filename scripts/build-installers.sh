@@ -9,6 +9,7 @@ plugin_package="$project_root/stream-deck/com.roie.deck-threads.streamDeckPlugin
 installer_scripts="$project_root/installer/scripts"
 version="$(node -p "require('$project_root/package.json').version")"
 installer_identity="${DECK_THREADS_INSTALLER_IDENTITY:-}"
+signing_keychain="${DECK_THREADS_SIGNING_KEYCHAIN:-}"
 
 if [[ -z "$app_path" ]]; then
   echo "Deck Threads.app was not found under $release_root" >&2
@@ -76,6 +77,9 @@ build_package() {
   )
   if [[ -n "$installer_identity" ]]; then
     command+=(--sign "$installer_identity")
+    if [[ -n "$signing_keychain" ]]; then
+      command+=(--keychain "$signing_keychain")
+    fi
   fi
   command+=("$output")
   "${command[@]}"
