@@ -64,6 +64,7 @@ jobs:
           keychain_password="$(openssl rand -hex 24)"
           app_certificate_path="$RUNNER_TEMP/deck-threads-app.p12"
           installer_certificate_path="$RUNNER_TEMP/deck-threads-installer.p12"
+          installer_public_certificate="$GITHUB_WORKSPACE/build/developer-id-installer.pem"
           printf '%s' "$APP_CERTIFICATE" | base64 --decode > "$app_certificate_path"
           printf '%s' "$INSTALLER_CERTIFICATE" | base64 --decode > "$installer_certificate_path"
           security create-keychain -p "$keychain_password" "$keychain_path"
@@ -71,6 +72,7 @@ jobs:
           security unlock-keychain -p "$keychain_password" "$keychain_path"
           security import "$app_certificate_path" -k "$keychain_path" -P "$APP_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security import "$installer_certificate_path" -k "$keychain_path" -P "$INSTALLER_CERTIFICATE_PASSWORD" -T /usr/bin/pkgbuild -T /usr/bin/productsign
+          security import "$installer_public_certificate" -k "$keychain_path" -T /usr/bin/pkgbuild -T /usr/bin/productsign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
           security list-keychains -d user -s "$keychain_path"
           security default-keychain -s "$keychain_path"
