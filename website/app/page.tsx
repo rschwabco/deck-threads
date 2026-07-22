@@ -1,4 +1,5 @@
 import HeroStage from "./hero-stage";
+import VisualParallax from "./visual-parallax";
 
 const INSTALLER_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Installer.dmg";
 const COMPANION_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Companion.dmg";
@@ -8,6 +9,7 @@ const footerKeys = ["DT1", "MP1", "QA2", "?", "NX1", "DT2", "AS1", "MP2"];
 export default function Home() {
   return (
     <main id="main-content">
+      <VisualParallax />
       <a className="skip-link" href="#product">Skip to product</a>
       <div className="ambient ambient-one" aria-hidden="true" />
       <div className="ambient ambient-two" aria-hidden="true" />
@@ -38,7 +40,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="app-frame">
+        <div className="app-frame" data-scroll-parallax data-parallax-speed="0.07" data-parallax-max="64">
           <div className="window-bar"><span /><span /><span /><em>Deck Threads</em></div>
           <img src="/deck-threads-app.png" alt="Deck Threads companion showing eight active agent tasks" width="1280" height="640" />
         </div>
@@ -56,7 +58,7 @@ export default function Home() {
       </section>
 
       <section className="download-section" id="download">
-        <div className="download-grid" aria-hidden="true">
+        <div className="download-grid" aria-hidden="true" data-scroll-parallax data-parallax-speed="0.085" data-parallax-max="76">
           {footerKeys.map((label, index) => <span key={`${label}-${index}`} className={label === "?" ? "question" : index === 0 || index === 5 ? "working" : "read"}>{label}</span>)}
         </div>
         <div className="download-copy">
