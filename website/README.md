@@ -16,5 +16,7 @@ npm run dev
 npm test
 ```
 
-The site is intentionally static and has no database, authentication, user
-accounts, analytics, or runtime secrets.
+The site has no database, authentication, user accounts, analytics, or runtime
+secrets. Its `/download/installer` and `/download/companion` routes resolve the
+newest complete published GitHub release, including prereleases, and redirect
+to the signed package assets.
