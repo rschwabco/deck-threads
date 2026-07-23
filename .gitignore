@@ -3,6 +3,8 @@ dist/
 release/
 release-production/
 release-preview/
+release-dmg-preview/
+release-dmg-preview-final/
 release-submission/
 marketplace/
 build/icon.iconset/
