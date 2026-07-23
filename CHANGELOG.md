@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.0.1-beta.3 — 2026-07-23
+
+- Improved connection stability so Stream Deck keys stay usable through brief companion scan delays instead of flashing offline.
+
 ## 1.0.1-beta.2 — 2026-07-22
 
 - Added signed in-app updates from public GitHub Releases with a single Update now action, download progress, automatic restart, stable and prerelease channels, and retry handling.
