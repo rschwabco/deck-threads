@@ -121,7 +121,7 @@ jobs:
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: deck-threads-${{ github.ref_name }}
+          name: deck-threads-${{ github.sha }}
           path: release-submission/*
           if-no-files-found: error
 
