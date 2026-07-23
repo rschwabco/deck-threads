@@ -54,7 +54,7 @@ class CodexAppServerClient {
       clientInfo: {
         name: "deck_threads",
         title: "Deck Threads",
-        version: "1.0.1",
+        version: "1.0.1-beta.3",
       },
       capabilities: { experimentalApi: true },
     });

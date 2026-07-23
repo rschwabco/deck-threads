@@ -1,4 +1,7 @@
 const BASE_URL = "http://127.0.0.1:9876/v1";
+const THREADS_REQUEST_TIMEOUT_MS = 5000;
+const HEALTH_REQUEST_TIMEOUT_MS = 1000;
+const OFFLINE_FAILURE_THRESHOLD = 2;
 
 export type TaskStatus = "working" | "question" | "unread" | "read" | "waiting" | "error" | "off";
 export type TaskPriority = "active" | "pinned" | "recent";
@@ -80,7 +83,7 @@ function normalizedTypography(value?: Partial<KeyTypography>) {
   };
 }
 
-class CompanionClient {
+export class CompanionClient {
   tasks: Array<AgentTask | null> = [];
   online = false;
   scannedAt?: string;
@@ -96,6 +99,7 @@ class CompanionClient {
     },
   };
   private refreshPromise?: Promise<void>;
+  private consecutiveUnavailableRefreshes = 0;
 
   refresh(): Promise<void> {
     if (this.refreshPromise) return this.refreshPromise;
@@ -107,7 +111,9 @@ class CompanionClient {
 
   private async performRefresh() {
     try {
-      const response = await fetch(`${BASE_URL}/threads`, { signal: AbortSignal.timeout(1400) });
+      const response = await fetch(`${BASE_URL}/threads`, {
+        signal: AbortSignal.timeout(THREADS_REQUEST_TIMEOUT_MS),
+      });
       if (!response.ok) throw new Error(`Companion returned ${response.status}`);
       const payload = (await response.json()) as ThreadResponse;
       this.tasks = Array.isArray(payload.tasks) ? payload.tasks.map((task) => {
@@ -136,10 +142,31 @@ class CompanionClient {
           claude: normalizedTypography(payload.displaySettings?.typography?.claude),
         },
       };
+      this.consecutiveUnavailableRefreshes = 0;
       this.online = true;
     } catch {
-      this.online = false;
-      this.tasks = [];
+      if (await this.companionIsReachable()) {
+        this.consecutiveUnavailableRefreshes = 0;
+        this.online = true;
+        return;
+      }
+
+      this.consecutiveUnavailableRefreshes += 1;
+      if (this.consecutiveUnavailableRefreshes >= OFFLINE_FAILURE_THRESHOLD) {
+        this.online = false;
+        this.tasks = [];
+      }
+    }
+  }
+
+  private async companionIsReachable() {
+    try {
+      const response = await fetch(`${BASE_URL}/health`, {
+        signal: AbortSignal.timeout(HEALTH_REQUEST_TIMEOUT_MS),
+      });
+      return response.ok;
+    } catch {
+      return false;
     }
   }
 

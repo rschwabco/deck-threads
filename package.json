@@ -1,7 +1,7 @@
 {
   "name": "deck-threads-companion",
   "productName": "Deck Threads",
-  "version": "1.0.1-beta.2",
+  "version": "1.0.1-beta.3",
   "private": true,
   "author": "Roie",
   "description": "A local companion that brings live Codex and Claude tasks to Stream Deck.",
