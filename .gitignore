@@ -10,5 +10,6 @@ build/icon.iconset/
 *.log
 *.tsbuildinfo
 *.streamDeckPlugin
+output/playwright/
 vite.config.js
 vite.config.d.ts

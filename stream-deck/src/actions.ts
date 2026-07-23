@@ -52,7 +52,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
       return;
     }
     try {
-      await companionClient.openThread(task.id);
+      await companionClient.openThread(task.sourceId, task.id);
       await event.action.showOk();
       setTimeout(() => void refreshAllActions(), 650);
     } catch {
@@ -87,16 +87,14 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
 
   private async render(current: KeyAction<ThreadSlotSettings>, slot: number, frame: number) {
     const task = companionClient.tasks[slot];
-    const animatedFrame = task?.status === "unread"
-      ? Math.floor(frame / 2)
-      : task?.status === "working" || task?.status === "question"
-        ? frame
-        : 0;
+    const appearance = task ? companionClient.appearanceFor(task) : undefined;
+    const typography = task ? companionClient.typographyFor(task) : undefined;
+    const animatedFrame = appearance?.animation === "still" ? 0 : frame;
     const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-    const signature = `${companionClient.online}:${task?.id}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${animatedFrame}`;
+    const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}:${animatedFrame}`;
     if (this.signatures.get(current.id) === signature) return;
     try {
-      const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle);
+      const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle, appearance, typography);
       await current.setImage(image, { target: Target.Hardware });
       await current.setImage(image, { target: Target.Software });
       await current.setTitle("", { target: Target.HardwareAndSoftware });

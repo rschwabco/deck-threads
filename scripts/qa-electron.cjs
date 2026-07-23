@@ -26,13 +26,26 @@ async function captureWindow(application, outputPath) {
 
 (async () => {
   const userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "deck-threads-qa-"));
+  const bridgePort = 19876;
+  const outputDir = path.join(process.cwd(), "output", "playwright");
+  fs.mkdirSync(outputDir, { recursive: true });
+  const screenshots = {
+    wide: path.join(outputDir, "deck-threads-wide.png"),
+    statuses: path.join(outputDir, "deck-threads-statuses.png"),
+    sources: path.join(outputDir, "deck-threads-sources.png"),
+    appearance: path.join(outputDir, "deck-threads-appearance.png"),
+    labels: path.join(outputDir, "deck-threads-key-labels.png"),
+    compact: path.join(outputDir, "deck-threads-compact.png"),
+    updateError: path.join(outputDir, "deck-threads-update-error.png"),
+  };
   const application = await electron.launch({
     args: ["."],
     cwd: process.cwd(),
     env: {
       ...process.env,
-      CODEX_BRIDGE_API_DISABLED: "1",
+      DECK_THREADS_BRIDGE_PORT: String(bridgePort),
       DECK_THREADS_USER_DATA_DIR: userDataDir,
+      DECK_THREADS_UPDATE_FIXTURE: "download-error-once",
     },
   });
 
@@ -41,6 +54,20 @@ async function captureWindow(application, outputPath) {
     await page.waitForLoadState("domcontentloaded");
     await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
     await page.waitForFunction(() => /Working|Question|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
+    const updateButton = page.getByRole("button", { name: "Update now" });
+    await updateButton.waitFor();
+    assert.match((await page.locator(".update-card").textContent()) || "", /Version 1\.0\.2 is ready/);
+
+    const healthResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/health`);
+    assert.equal(healthResponse.ok, true);
+    const threadResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/threads`);
+    assert.equal(threadResponse.ok, true);
+    const threadPayload = await threadResponse.json();
+    assert.equal(threadPayload.tasks.length, 8);
+    assert.ok(threadPayload.tasks.filter(Boolean).every((task) => task.sourceId === "codex" || task.sourceId === "claude"));
+    assert.equal(threadPayload.displaySettings.statusAppearance.codex.working.animation, "sweep");
+    assert.equal(threadPayload.displaySettings.statusAppearance.claude.question.backgroundColor, "#57321F");
+    assert.deepEqual(threadPayload.displaySettings.typography.codex, { slotHandleFontSize: 17, threadNameFontSize: 12 });
 
     const title = await page.title();
     const taskSlots = page.locator(".task-key");
@@ -51,9 +78,12 @@ async function captureWindow(application, outputPath) {
     assert.equal(title, "Deck Threads");
     assert.equal(taskCount, 8);
     assert.match(firstTaskLabel || "", /Working|Question|Unread|Read/);
-    assert.equal(await page.locator(".sidebar nav .nav-item").count(), 4);
+    assert.equal(await page.locator(".sidebar nav .nav-item").count(), 6);
+    assert.equal(await page.locator(".source-badge").count(), 0);
+    assert.ok(await page.locator(".task-key.task-source-codex").count() > 0);
+    assert.ok(await page.locator(".task-key.task-source-claude").count() > 0);
 
-    const invalidOpen = await page.evaluate(() => window.bridgeApi.openCodexThread("not-a-thread-id", "Invalid task"));
+    const invalidOpen = await page.evaluate(() => window.bridgeApi.openTask("claude", "not-a-thread-id", "Invalid task"));
     assert.equal(invalidOpen.ok, false);
     assert.match(invalidOpen.message, /invalid task ID/i);
 
@@ -63,13 +93,130 @@ async function captureWindow(application, outputPath) {
     const wideLayout = await layoutMetrics(page);
     assert.ok(wideLayout.bodyScrollWidth <= wideLayout.bodyClientWidth, `Wide layout overflow: ${JSON.stringify(wideLayout)}`);
     assert.ok(wideLayout.documentScrollWidth <= wideLayout.documentClientWidth, `Wide document overflow: ${JSON.stringify(wideLayout)}`);
-    await captureWindow(application, "/tmp/deck-threads-wide.png");
+    await captureWindow(application, screenshots.wide);
+
+    await page.evaluate(() => {
+      const states = [
+        ["working", "Working", "#4169FF", "#FFFFFF"],
+        ["question", "Question", "#FF6D00", "#FFFFFF"],
+        ["unread", "Unread", "#2ED47A", "#FFFFFF"],
+        ["read", "Read", "#D9DEE8", "#111722"],
+        ["waiting", "Waiting", "#F5A742", "#111722"],
+        ["error", "Error", "#FF5C70", "#FFFFFF"],
+      ];
+      const buttons = Array.from(document.querySelectorAll(".task-key")).slice(0, states.length);
+      buttons.forEach((button, index) => {
+        const [state, label, color, foreground] = states[index];
+        button.classList.remove("task-working", "task-question", "task-unread", "task-read", "task-waiting", "task-error", "task-off");
+        button.classList.remove("task-source-codex", "task-source-claude");
+        button.classList.remove("motion-still", "motion-breathe", "motion-sweep", "motion-pulse");
+        button.classList.add(`task-${state}`);
+        button.classList.add(index < 3 ? "task-source-codex" : "task-source-claude");
+        button.classList.add(index % 2 ? "motion-pulse" : "motion-sweep");
+        button.style.setProperty("--task-color", color);
+        button.style.setProperty("--task-background", color);
+        button.style.setProperty("--task-foreground", foreground);
+        const statusLine = button.querySelector("small");
+        if (statusLine) statusLine.textContent = label;
+      });
+    });
+    await page.waitForTimeout(220);
+    const statusBorders = await page.locator(".task-key").evaluateAll((buttons) =>
+      buttons.slice(0, 6).map((button) => getComputedStyle(button).borderTopColor),
+    );
+    assert.deepEqual(statusBorders, [
+      "rgb(102, 130, 255)",
+      "rgb(102, 130, 255)",
+      "rgb(102, 130, 255)",
+      "rgb(225, 132, 82)",
+      "rgb(225, 132, 82)",
+      "rgb(225, 132, 82)",
+    ]);
+    const statusSurfaces = await page.locator(".task-key").evaluateAll((buttons) =>
+      buttons.slice(0, 6).map((button) => getComputedStyle(button).getPropertyValue("--task-background").trim()),
+    );
+    assert.deepEqual(statusSurfaces, ["#4169FF", "#FF6D00", "#2ED47A", "#D9DEE8", "#F5A742", "#FF5C70"]);
+    assert.equal(await page.locator(".task-key").nth(3).evaluate((button) => getComputedStyle(button).color), "rgb(17, 23, 34)");
+    await captureWindow(application, screenshots.statuses);
+    await page.reload();
+    await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
+
+    await page.getByRole("button", { name: "Sources" }).click();
+    await page.getByRole("heading", { name: "Reserved keys" }).waitFor();
+    const adaptiveToggle = page.getByRole("checkbox", { name: "Fill unused keys with active tasks" });
+    const adaptiveControl = page.locator(".source-toggle");
+    assert.equal(await adaptiveToggle.isChecked(), true);
+    await page.getByRole("button", { name: "Reserve 6 keys for Codex and 2 for Claude" }).click();
+    await page.waitForTimeout(350);
+    const allocationPath = path.join(userDataDir, "source-allocation.json");
+    const persistedAllocation = JSON.parse(fs.readFileSync(allocationPath, "utf8"));
+    assert.deepEqual(persistedAllocation.reservations, { codex: 6, claude: 2 });
+    assert.equal(persistedAllocation.fillUnused, true);
+    await adaptiveControl.click();
+    await page.waitForTimeout(200);
+    assert.equal(JSON.parse(fs.readFileSync(allocationPath, "utf8")).fillUnused, false);
+    await adaptiveControl.click();
+    await page.waitForTimeout(350);
+    assert.equal(JSON.parse(fs.readFileSync(allocationPath, "utf8")).fillUnused, true);
+    assert.equal(await adaptiveToggle.isChecked(), true);
+    await captureWindow(application, screenshots.sources);
 
     await page.getByRole("button", { name: "Connections" }).click();
     await page.getByRole("heading", { name: "Connection status" }).waitFor();
     assert.equal(await page.locator(".task-grid").count(), 0);
     const streamDeckStatus = (await page.locator(".health-item").filter({ hasText: "Stream Deck" }).textContent())?.replace(/\s+/g, " ").trim();
     assert.match(streamDeckStatus || "", /Online|Offline|Error/);
+    const claudeStatus = (await page.locator(".health-item").filter({ hasText: "Claude" }).textContent())?.replace(/\s+/g, " ").trim();
+    assert.match(claudeStatus || "", /Online|Offline|Error/);
+
+    await page.getByRole("button", { name: "Appearance" }).click();
+    await page.getByRole("heading", { name: "Status backgrounds and motion" }).waitFor();
+    assert.equal(await page.locator(".appearance-card").count(), 6);
+    assert.equal(await page.locator(".animation-options button").count(), 24);
+    assert.equal(await page.locator(".font-size-control").count(), 2);
+    const codexHandleSize = page.getByLabel("Slot handle font size for Codex");
+    const codexThreadSize = page.getByLabel("Thread name font size for Codex");
+    await codexHandleSize.fill("24");
+    await codexThreadSize.fill("16");
+    const codexWorkingColor = page.getByLabel("Background color for Codex Working");
+    await codexWorkingColor.fill("#123456");
+    await page.getByRole("button", { name: "Use Pulse animation for Codex Working" }).click();
+    await page.waitForTimeout(220);
+    const appearanceSettingsPath = path.join(userDataDir, "display-settings.json");
+    let persistedAppearance = JSON.parse(fs.readFileSync(appearanceSettingsPath, "utf8"));
+    assert.equal(persistedAppearance.version, 3);
+    assert.equal(persistedAppearance.statusAppearance.codex.working.backgroundColor, "#123456");
+    assert.equal(persistedAppearance.statusAppearance.codex.working.animation, "pulse");
+    assert.deepEqual(persistedAppearance.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });
+    assert.equal(await page.locator(".typography-preview-handle").evaluate((element) => getComputedStyle(element).fontSize), "24px");
+    assert.equal(await page.locator(".typography-preview strong").evaluate((element) => getComputedStyle(element).fontSize), "16px");
+    await page.getByRole("button", { name: /Claude/ }).click();
+    await page.getByLabel("Slot handle font size for Claude").fill("14");
+    await page.getByLabel("Thread name font size for Claude").fill("10");
+    await page.getByRole("button", { name: "Use Sweep animation for Claude Question" }).click();
+    await page.waitForTimeout(220);
+    persistedAppearance = JSON.parse(fs.readFileSync(appearanceSettingsPath, "utf8"));
+    assert.equal(persistedAppearance.statusAppearance.claude.question.animation, "sweep");
+    assert.equal(persistedAppearance.statusAppearance.claude.working.backgroundColor, "#24375F");
+    assert.deepEqual(persistedAppearance.typography.claude, { slotHandleFontSize: 14, threadNameFontSize: 10 });
+    assert.deepEqual(persistedAppearance.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });
+    const updatedThreadResponse = await fetch(`http://127.0.0.1:${bridgePort}/v1/threads`);
+    const updatedThreadPayload = await updatedThreadResponse.json();
+    assert.equal(updatedThreadPayload.displaySettings.statusAppearance.codex.working.backgroundColor, "#123456");
+    assert.equal(updatedThreadPayload.displaySettings.statusAppearance.claude.question.animation, "sweep");
+    assert.deepEqual(updatedThreadPayload.displaySettings.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });
+    assert.deepEqual(updatedThreadPayload.displaySettings.typography.claude, { slotHandleFontSize: 14, threadNameFontSize: 10 });
+    await page.getByRole("button", { name: /Codex/ }).click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.locator(".source-tab-codex").getAttribute("aria-pressed"), "true");
+    assert.equal(await page.locator(".source-tab-claude").getAttribute("aria-pressed"), "false");
+    await captureWindow(application, screenshots.appearance);
+
+    await page.getByRole("button", { name: "Threads" }).click();
+    await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
+    const codexTask = page.locator(".task-key.task-source-codex").first();
+    assert.equal(await codexTask.locator(".task-number").evaluate((element) => getComputedStyle(element).fontSize), "24px");
+    assert.equal(await codexTask.locator("strong").evaluate((element) => getComputedStyle(element).fontSize), "16px");
 
     await page.getByRole("button", { name: "Key labels" }).click();
     await page.getByRole("heading", { name: "Show thread titles" }).waitFor();
@@ -87,7 +234,7 @@ async function captureWindow(application, outputPath) {
     await page.waitForTimeout(150);
     const persistedSettings = JSON.parse(fs.readFileSync(path.join(userDataDir, "display-settings.json"), "utf8"));
     assert.equal(persistedSettings.showThreadTitle.question, true);
-    await captureWindow(application, "/tmp/deck-threads-key-labels.png");
+    await captureWindow(application, screenshots.labels);
 
     await page.getByRole("button", { name: "Activity" }).click();
     await page.getByRole("heading", { name: "Recent events" }).waitFor();
@@ -102,17 +249,35 @@ async function captureWindow(application, outputPath) {
     const compactLayout = await layoutMetrics(page);
     assert.ok(compactLayout.bodyScrollWidth <= compactLayout.bodyClientWidth, `Compact layout overflow: ${JSON.stringify(compactLayout)}`);
     assert.ok(compactLayout.documentScrollWidth <= compactLayout.documentClientWidth, `Compact document overflow: ${JSON.stringify(compactLayout)}`);
-    await captureWindow(application, "/tmp/deck-threads-compact.png");
+    await captureWindow(application, screenshots.compact);
+
+    await updateButton.click();
+    await page.locator(".update-progress").waitFor();
+    assert.equal(await page.locator(".update-progress").getAttribute("role"), "progressbar");
+    await page.getByText("Update needs attention", { exact: true }).waitFor();
+    const retryUpdate = page.getByRole("button", { name: "Try again" });
+    assert.ok(await retryUpdate.isVisible());
+    await captureWindow(application, screenshots.updateError);
+    await retryUpdate.click();
+    await page.getByText("Restarting Deck Threads", { exact: true }).waitFor();
+    const updateState = await page.evaluate(() => window.bridgeApi.getUpdateState());
+    assert.equal(updateState.status, "installing");
+    assert.equal(updateState.availableVersion, "1.0.2");
 
     process.stdout.write(`${JSON.stringify({
       title,
       source,
       firstTaskLabel,
       streamDeckStatus,
+      claudeStatus,
       questionTitleEnabled: await questionToggle.isChecked(),
+      sourceAllocation: persistedAllocation,
+      appearance: persistedAppearance.statusAppearance,
+      typography: persistedAppearance.typography,
       wideLayout,
       compactLayout,
-      screenshots: ["/tmp/deck-threads-wide.png", "/tmp/deck-threads-key-labels.png", "/tmp/deck-threads-compact.png"],
+      updateState,
+      screenshots: Object.values(screenshots),
     }, null, 2)}\n`);
   } finally {
     await application.close();

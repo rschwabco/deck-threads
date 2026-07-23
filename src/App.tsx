@@ -5,33 +5,68 @@ import {
   Check,
   CircleNotch,
   Command,
+  DownloadSimple,
   Monitor,
+  Palette,
   Plug,
   PushPinSimple,
+  SlidersHorizontal,
   SquaresFour,
   TerminalWindow,
   TextAa,
   Warning,
   X,
 } from "@phosphor-icons/react";
-import type { CodexTaskStatus, EventEntry, HealthState, LabelConfigurableStatus, SystemSnapshot } from "./types";
+import type {
+  CodexTaskStatus,
+  EventEntry,
+  HealthState,
+  KeyAnimation,
+  KeyTypography,
+  LabelConfigurableStatus,
+  SourceAllocationSettings,
+  StatusAppearance,
+  SystemSnapshot,
+  TaskSourceId,
+  UpdateState,
+} from "./types";
 
-const STATUS_META: Record<CodexTaskStatus, { label: string; color: string; description: string }> = {
-  working: { label: "Working", color: "#4169FF", description: "A calm cobalt flow while Codex is active." },
-  question: { label: "Question", color: "#FF6D00", description: "Bright orange when Codex is waiting for your answer." },
-  unread: { label: "Unread", color: "#2ED47A", description: "A brighter green signal when work finishes." },
-  read: { label: "Read", color: "#D9DEE8", description: "A quiet neutral key after you view the result." },
-  waiting: { label: "Waiting", color: "#F5A742", description: "Amber when Codex needs your attention." },
-  error: { label: "Error", color: "#FF5C70", description: "Red when a task cannot continue." },
-  off: { label: "Empty", color: "#303746", description: "An unused slot stays dark." },
+const STATUS_META: Record<CodexTaskStatus, { label: string; description: string }> = {
+  working: { label: "Working", description: "An agent is actively moving the task forward." },
+  question: { label: "Question", description: "The agent is waiting for your answer." },
+  unread: { label: "Unread", description: "New completed work is ready to review." },
+  read: { label: "Read", description: "The latest result has already been viewed." },
+  waiting: { label: "Waiting", description: "The task needs attention before it can continue." },
+  error: { label: "Error", description: "The task cannot continue without intervention." },
+  off: { label: "Empty", description: "An unused slot stays dark." },
 };
 
 const TITLE_STATES: LabelConfigurableStatus[] = ["working", "question", "unread", "read", "waiting", "error"];
-type ActiveView = "threads" | "connections" | "labels" | "activity";
+const SOURCE_META: Record<TaskSourceId, { label: string; shortLabel: string }> = {
+  codex: { label: "Codex", shortLabel: "CX" },
+  claude: { label: "Claude", shortLabel: "CL" },
+};
+const ANIMATION_META: Array<{ id: KeyAnimation; label: string; description: string }> = [
+  { id: "still", label: "Still", description: "No motion" },
+  { id: "breathe", label: "Breathe", description: "Soft brightness cycle" },
+  { id: "sweep", label: "Sweep", description: "Light moves across the key" },
+  { id: "pulse", label: "Pulse", description: "Expanding attention signal" },
+];
+const DEFAULT_STATUS_APPEARANCE: Record<LabelConfigurableStatus, StatusAppearance> = {
+  working: { backgroundColor: "#24375F", animation: "sweep" },
+  question: { backgroundColor: "#57321F", animation: "pulse" },
+  unread: { backgroundColor: "#1C4934", animation: "breathe" },
+  read: { backgroundColor: "#2B333F", animation: "still" },
+  waiting: { backgroundColor: "#4A3920", animation: "still" },
+  error: { backgroundColor: "#4D2730", animation: "still" },
+};
+type ActiveView = "threads" | "sources" | "connections" | "appearance" | "labels" | "activity";
 
 const EMPTY_SNAPSHOT: SystemSnapshot = {
   scannedAt: new Date(0).toISOString(),
-  codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", tasks: [] },
+  tasks: [],
+  codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", taskCount: 0 },
+  claude: { state: "missing", processCount: 0, detail: "Looking for Claude sessions.", source: "Scanning", taskCount: 0 },
   streamDeck: { state: "missing", processCount: 0, pluginConnected: false, detail: "Looking for Stream Deck." },
   companion: { state: "connected", detail: "Starting the local task service." },
   displaySettings: {
@@ -43,7 +78,16 @@ const EMPTY_SNAPSHOT: SystemSnapshot = {
       waiting: false,
       error: false,
     },
+    statusAppearance: {
+      codex: structuredClone(DEFAULT_STATUS_APPEARANCE),
+      claude: structuredClone(DEFAULT_STATUS_APPEARANCE),
+    },
+    typography: {
+      codex: { slotHandleFontSize: 17, threadNameFontSize: 12 },
+      claude: { slotHandleFontSize: 17, threadNameFontSize: 12 },
+    },
   },
+  allocationSettings: { reservations: { codex: 4, claude: 4 }, fillUnused: true },
 };
 
 function stateLabel(state: HealthState) {
@@ -71,6 +115,16 @@ function formatAge(value?: number) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function contrastForeground(backgroundColor: string) {
+  const match = /^#([0-9a-f]{6})$/i.exec(backgroundColor);
+  if (!match) return "#FFFFFF";
+  const value = Number.parseInt(match[1], 16);
+  const red = (value >> 16) & 255;
+  const green = (value >> 8) & 255;
+  const blue = value & 255;
+  return (red * 299 + green * 587 + blue * 114) / 1000 > 158 ? "#111722" : "#FFFFFF";
 }
 
 function HealthItem({
@@ -111,13 +165,84 @@ function ActionResult({ result }: { result?: { ok: boolean; message: string } })
   );
 }
 
+function UpdateCard({
+  state,
+  pending,
+  onAction,
+}: {
+  state: UpdateState;
+  pending: boolean;
+  onAction: () => void;
+}) {
+  const downloading = state.status === "downloading";
+  const installing = state.status === "installing";
+  const checking = state.status === "checking";
+  const failed = state.status === "error";
+  const upToDate = state.status === "up-to-date";
+  const progress = typeof state.progress === "number" ? Math.round(state.progress) : undefined;
+  const title = upToDate
+    ? "Deck Threads is current"
+    : failed
+      ? "Update needs attention"
+      : downloading
+        ? `Downloading${progress === undefined ? "" : ` ${progress}%`}`
+        : installing
+          ? "Restarting Deck Threads"
+          : checking
+            ? "Checking for updates"
+            : `Version ${state.availableVersion || "new"} is ready`;
+  const actionLabel = failed
+    ? state.availableVersion ? "Try again" : "Check again"
+    : "Update now";
+  const showAction = state.status === "available" || failed;
+
+  return (
+    <article className={`update-card update-${state.status}`} aria-live="polite" aria-atomic="true">
+      <div className="update-card-heading">
+        <span className="update-card-icon" aria-hidden="true">
+          {upToDate ? <Check weight="bold" /> : failed ? <Warning weight="bold" /> : downloading || installing || checking ? <CircleNotch className="spin" /> : <DownloadSimple weight="bold" />}
+        </span>
+        <div>
+          <p>App update</p>
+          <strong>{title}</strong>
+        </div>
+      </div>
+      {state.message && <span className="update-card-copy">{state.message}</span>}
+      {downloading && (
+        <div
+          className="update-progress"
+          role="progressbar"
+          aria-label="Downloading Deck Threads update"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={progress}
+        >
+          <span style={{ width: `${progress || 0}%` }} />
+        </div>
+      )}
+      {showAction && (
+        <button className="update-action" onClick={onAction} disabled={pending}>
+          {pending ? <CircleNotch className="spin" /> : failed ? <ArrowsClockwise /> : <DownloadSimple />}
+          {actionLabel}
+        </button>
+      )}
+    </article>
+  );
+}
+
 export function App() {
   const [activeView, setActiveView] = useState<ActiveView>("threads");
+  const [appearanceSource, setAppearanceSource] = useState<TaskSourceId>("codex");
   const [snapshot, setSnapshot] = useState<SystemSnapshot>(EMPTY_SNAPSHOT);
   const [events, setEvents] = useState<EventEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionResult, setActionResult] = useState<{ ok: boolean; message: string }>();
+  const [updateActionPending, setUpdateActionPending] = useState(false);
+  const [updateState, setUpdateState] = useState<UpdateState>({
+    status: "disabled",
+    currentVersion: "",
+  });
 
   const loadSnapshot = useCallback(async (announce = false) => {
     const next = announce ? await window.bridgeApi.refresh() : await window.bridgeApi.getSnapshot();
@@ -152,15 +277,34 @@ export function App() {
     };
   }, [loadSnapshot]);
 
+  useEffect(() => {
+    let mounted = true;
+    window.bridgeApi.getUpdateState()
+      .then((state) => {
+        if (mounted) setUpdateState(state);
+      })
+      .catch(() => undefined);
+    const removeListener = window.bridgeApi.onUpdateState((state) => {
+      if (mounted) setUpdateState(state);
+    });
+    return () => {
+      mounted = false;
+      removeListener();
+    };
+  }, []);
+
   const taskCounts = useMemo(() => ({
-    working: snapshot.codex.tasks.filter((task) => task?.status === "working").length,
-    question: snapshot.codex.tasks.filter((task) => task?.status === "question").length,
-    unread: snapshot.codex.tasks.filter((task) => task?.status === "unread").length,
-    pinned: snapshot.codex.tasks.filter((task) => task?.pinned).length,
-  }), [snapshot.codex.tasks]);
+    working: snapshot.tasks.filter((task) => task?.status === "working").length,
+    attention: snapshot.tasks.filter((task) => task?.status === "question" || task?.status === "unread" || task?.status === "waiting").length,
+    codex: snapshot.tasks.filter((task) => task?.sourceId === "codex").length,
+    claude: snapshot.tasks.filter((task) => task?.sourceId === "claude").length,
+  }), [snapshot.tasks]);
+  const selectedTypography = snapshot.displaySettings.typography[appearanceSource];
+  const selectedPreviewAppearance = snapshot.displaySettings.statusAppearance[appearanceSource].working;
 
   const updateTitleVisibility = async (status: LabelConfigurableStatus, visible: boolean) => {
     const nextSettings = {
+      ...snapshot.displaySettings,
       showThreadTitle: {
         ...snapshot.displaySettings.showThreadTitle,
         [status]: visible,
@@ -184,6 +328,71 @@ export function App() {
     }
   };
 
+  const updateStatusAppearance = async (
+    sourceId: TaskSourceId,
+    status: LabelConfigurableStatus,
+    patch: Partial<StatusAppearance>,
+  ) => {
+    const nextSettings = {
+      ...snapshot.displaySettings,
+      statusAppearance: {
+        ...snapshot.displaySettings.statusAppearance,
+        [sourceId]: {
+          ...snapshot.displaySettings.statusAppearance[sourceId],
+          [status]: {
+            ...snapshot.displaySettings.statusAppearance[sourceId][status],
+            ...patch,
+          },
+        },
+      },
+    };
+    setSnapshot((current) => ({ ...current, displaySettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setDisplaySettings(nextSettings);
+      setSnapshot((current) => ({ ...current, displaySettings: saved }));
+    } catch (error) {
+      const failure = {
+        id: `appearance-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save key appearance",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
+  const updateTypography = async (sourceId: TaskSourceId, patch: Partial<KeyTypography>) => {
+    const nextSettings = {
+      ...snapshot.displaySettings,
+      typography: {
+        ...snapshot.displaySettings.typography,
+        [sourceId]: {
+          ...snapshot.displaySettings.typography[sourceId],
+          ...patch,
+        },
+      },
+    };
+    setSnapshot((current) => ({ ...current, displaySettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setDisplaySettings(nextSettings);
+      setSnapshot((current) => ({ ...current, displaySettings: saved }));
+    } catch (error) {
+      const failure = {
+        id: `typography-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save key text sizes",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
@@ -193,10 +402,49 @@ export function App() {
     }
   };
 
+  const handleUpdateAction = async () => {
+    setUpdateActionPending(true);
+    try {
+      const next = updateState.status === "error" && !updateState.availableVersion
+        ? await window.bridgeApi.checkForUpdates()
+        : await window.bridgeApi.startUpdate();
+      setUpdateState(next);
+    } catch {
+      setUpdateState((current) => ({
+        ...current,
+        status: "error",
+        progress: undefined,
+        message: "The update could not be started. Try again.",
+      }));
+    } finally {
+      setUpdateActionPending(false);
+    }
+  };
+
+  const updateSourceAllocation = async (nextSettings: SourceAllocationSettings) => {
+    setSnapshot((current) => ({ ...current, allocationSettings: nextSettings }));
+    try {
+      const saved = await window.bridgeApi.setSourceAllocation(nextSettings);
+      setSnapshot((current) => ({ ...current, allocationSettings: saved }));
+      await loadSnapshot();
+    } catch (error) {
+      const failure = {
+        id: `allocation-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        source: "system",
+        level: "error",
+        message: "Could not save task allocation",
+        detail: error instanceof Error ? error.message : String(error),
+      } satisfies EventEntry;
+      setEvents((current) => [failure, ...current].slice(0, 100));
+      await loadSnapshot().catch(() => undefined);
+    }
+  };
+
   const openTask = async (slot: number) => {
-    const task = snapshot.codex.tasks[slot];
+    const task = snapshot.tasks[slot];
     if (!task) return;
-    const result = await window.bridgeApi.openCodexThread(task.id, task.title);
+    const result = await window.bridgeApi.openTask(task.sourceId, task.id, task.title, task.openId);
     setActionResult(result);
     window.setTimeout(() => loadSnapshot().catch(() => undefined), 500);
   };
@@ -216,15 +464,22 @@ export function App() {
 
         <nav aria-label="Deck Threads">
           <button className={`nav-item ${activeView === "threads" ? "nav-active" : ""}`} onClick={() => setActiveView("threads")}><SquaresFour /> Threads</button>
+          <button className={`nav-item ${activeView === "sources" ? "nav-active" : ""}`} onClick={() => setActiveView("sources")}><SlidersHorizontal /> Sources</button>
           <button className={`nav-item ${activeView === "connections" ? "nav-active" : ""}`} onClick={() => setActiveView("connections")}><Plug /> Connections</button>
+          <button className={`nav-item ${activeView === "appearance" ? "nav-active" : ""}`} onClick={() => setActiveView("appearance")}><Palette /> Appearance</button>
           <button className={`nav-item ${activeView === "labels" ? "nav-active" : ""}`} onClick={() => setActiveView("labels")}><TextAa /> Key labels</button>
           <button className={`nav-item ${activeView === "activity" ? "nav-active" : ""}`} onClick={() => setActiveView("activity")}><TerminalWindow /> Activity</button>
         </nav>
 
-        <div className="sidebar-note">
-          <p>Deck sync</p>
-          <strong>{snapshot.streamDeck.pluginConnected ? "Plugin connected" : "Waiting for plugin"}</strong>
-          <span>Keep this companion running to update keys and open tasks.</span>
+        <div className="sidebar-status-stack">
+          {!["disabled", "idle"].includes(updateState.status) && (
+            <UpdateCard state={updateState} pending={updateActionPending} onAction={handleUpdateAction} />
+          )}
+          <div className="sidebar-note">
+            <p>Deck sync</p>
+            <strong>{snapshot.streamDeck.pluginConnected ? "Plugin connected" : "Waiting for plugin"}</strong>
+            <span>Keep this companion running to update keys and open tasks.</span>
+          </div>
         </div>
       </aside>
 
@@ -233,8 +488,8 @@ export function App() {
         <header className="topbar">
           <div>
             <p className="section-kicker">Live task surface</p>
-            <h1>Your Codex work, on deck.</h1>
-            <p className="topbar-copy">See what is active, spot finished work, and open any task with one press.</p>
+            <h1>Your agent work, on deck.</h1>
+            <p className="topbar-copy">See active Codex and Claude work, spot tasks that need attention, and open either app with one press.</p>
           </div>
           <div className="topbar-actions">
             <span className="scan-time">Updated {formatTime(snapshot.scannedAt)}</span>
@@ -247,33 +502,44 @@ export function App() {
 
         <section className="summary-strip" aria-label="Task summary">
           <div><strong>{taskCounts.working}</strong><span>working</span></div>
-          <div><strong>{taskCounts.question}</strong><span>questions</span></div>
-          <div><strong>{taskCounts.unread}</strong><span>unread</span></div>
-          <div><strong>{taskCounts.pinned}</strong><span>pinned</span></div>
-          <p>{snapshot.codex.source}</p>
+          <div><strong>{taskCounts.attention}</strong><span>attention</span></div>
+          <div><strong>{taskCounts.codex}</strong><span>Codex</span></div>
+          <div><strong>{taskCounts.claude}</strong><span>Claude</span></div>
+          <p>{snapshot.allocationSettings.fillUnused ? "Adaptive allocation" : "Strict allocation"}</p>
         </section>
 
         <section className="task-panel" aria-labelledby="task-heading">
           <div className="panel-heading">
             <div>
               <h2 id="task-heading">Eight live task keys</h2>
-              <p>Working tasks keep their key. Open slots follow recent activity first, then pinned projects. Press any task here or on your Stream Deck to open it in Codex.</p>
+              <p>Tasks keep stable keys across refreshes. Press any task here or on your Stream Deck to open it in the app that owns it.</p>
             </div>
           </div>
 
           <div className="task-grid">
-            {Array.from({ length: 8 }, (_, index) => snapshot.codex.tasks[index]).map((task, index) => {
+            {Array.from({ length: 8 }, (_, index) => snapshot.tasks[index]).map((task, index) => {
               const status = STATUS_META[task?.status || "off"];
+              const appearance = task
+                ? snapshot.displaySettings.statusAppearance[task.sourceId][task.status as LabelConfigurableStatus]
+                : undefined;
+              const typography = task ? snapshot.displaySettings.typography[task.sourceId] : undefined;
               return (
                 <button
-                  className={`task-key task-${task?.status || "off"}`}
-                  key={task?.id || `empty-${index}`}
+                  className={`task-key task-${task?.status || "off"}${task ? ` task-source-${task.sourceId} motion-${appearance?.animation || "still"}` : ""}`}
+                  key={task?.stableId || `empty-${index}`}
                   onClick={() => openTask(index)}
                   disabled={!task}
                   data-thread-id={task?.id}
+                  data-source-id={task?.sourceId}
                   data-cwd={task?.cwd}
-                  style={{ "--task-color": status.color } as React.CSSProperties}
-                  aria-label={task ? `Open task slot ${index + 1} in Codex: ${task.title}, ${status.label}` : `Task slot ${index + 1}: empty`}
+                  style={{
+                    "--task-color": appearance?.backgroundColor || "#303746",
+                    "--task-background": appearance?.backgroundColor || "#202630",
+                    "--task-foreground": contrastForeground(appearance?.backgroundColor || "#202630"),
+                    "--slot-handle-font-size": `${typography?.slotHandleFontSize || 17}px`,
+                    "--thread-name-font-size": `${typography?.threadNameFontSize || 12}px`,
+                  } as React.CSSProperties}
+                  aria-label={task ? `Open task slot ${index + 1} in ${task.sourceName}: ${task.title}, ${status.label}` : `Task slot ${index + 1}: empty`}
                 >
                   <span className="task-key-topline" aria-hidden="true" />
                   <span className="task-key-meta">
@@ -293,12 +559,78 @@ export function App() {
         </section>
         </>}
 
+        {activeView === "sources" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Eight key allocation</p>
+              <h1>Task sources</h1>
+              <p className="topbar-copy">Reserve keys for each app, then decide whether active work may borrow unused keys.</p>
+            </div>
+          </header>
+
+          <section className="source-settings-panel page-panel" aria-labelledby="source-settings-heading">
+            <div className="panel-heading">
+              <div>
+                <h2 id="source-settings-heading">Reserved keys</h2>
+                <p>Choose the baseline split. The two reservations always add up to eight.</p>
+              </div>
+              <div className="allocation-total" aria-label="Current reserved key allocation">
+                <span><b>{snapshot.allocationSettings.reservations.codex}</b> Codex</span>
+                <span><b>{snapshot.allocationSettings.reservations.claude}</b> Claude</span>
+              </div>
+            </div>
+            <div className="allocation-scale" role="group" aria-label="Number of keys reserved for Codex">
+              {Array.from({ length: 9 }, (_, codexCount) => (
+                <button
+                  key={codexCount}
+                  className={snapshot.allocationSettings.reservations.codex === codexCount ? "allocation-selected" : ""}
+                  onClick={() => void updateSourceAllocation({
+                    ...snapshot.allocationSettings,
+                    reservations: { codex: codexCount, claude: 8 - codexCount },
+                  })}
+                  aria-pressed={snapshot.allocationSettings.reservations.codex === codexCount}
+                  aria-label={`Reserve ${codexCount} keys for Codex and ${8 - codexCount} for Claude`}
+                >
+                  {codexCount}
+                </button>
+              ))}
+            </div>
+            <div className="allocation-axis" aria-hidden="true"><span>All Claude</span><span>Even split</span><span>All Codex</span></div>
+          </section>
+
+          <section className="source-settings-panel borrowing-panel" aria-labelledby="borrowing-heading">
+            <div className="borrowing-copy">
+              <span className="source-setting-icon"><ArrowsClockwise /></span>
+              <div>
+                <h2 id="borrowing-heading">Fill unused keys with active tasks</h2>
+                <p>When one app has fewer tasks than its reservation, the other app can use those open keys. A 4/4 split becomes 6 Codex and 2 Claude when that is what is active.</p>
+              </div>
+            </div>
+            <label className="label-toggle source-toggle">
+              <input
+                type="checkbox"
+                checked={snapshot.allocationSettings.fillUnused}
+                onChange={(event) => void updateSourceAllocation({
+                  ...snapshot.allocationSettings,
+                  fillUnused: event.currentTarget.checked,
+                })}
+                aria-label="Fill unused keys with active tasks"
+              />
+              <span aria-hidden="true" />
+            </label>
+          </section>
+
+          <p className="allocation-preview" role="status">
+            Currently showing <strong>{taskCounts.codex} Codex</strong> and <strong>{taskCounts.claude} Claude</strong> tasks across eight keys.
+          </p>
+        </>}
+
         {activeView === "connections" && <>
           <header className="topbar">
             <div>
               <p className="section-kicker">Local services</p>
               <h1>Connections</h1>
-              <p className="topbar-copy">Confirm that Codex Desktop, Stream Deck, and the local companion can see each other.</p>
+              <p className="topbar-copy">Confirm that Codex, Claude, Stream Deck, and the local companion can see each other.</p>
             </div>
             <div className="topbar-actions">
               <span className="scan-time">Updated {formatTime(snapshot.scannedAt)}</span>
@@ -313,20 +645,153 @@ export function App() {
             <div className="panel-heading">
               <div>
                 <h2 id="connection-heading">Connection status</h2>
-                <p>The companion stays local. It reads Codex task state and serves it only to Stream Deck on this Mac.</p>
+                <p>The companion stays local. It reads agent task state and serves it only to Stream Deck on this Mac.</p>
               </div>
             </div>
             {loading ? (
               <div className="health-loading" aria-label="Checking connections">
-                {[0, 1, 2].map((item) => <div className="skeleton" key={item} />)}
+                {[0, 1, 2, 3].map((item) => <div className="skeleton" key={item} />)}
               </div>
             ) : (
               <div className="health-list">
                 <HealthItem icon={<Command />} label="Codex Desktop" state={snapshot.codex.state} detail={snapshot.codex.detail} />
+                <HealthItem icon={<TerminalWindow />} label="Claude" state={snapshot.claude.state} detail={snapshot.claude.detail} />
                 <HealthItem icon={<Monitor />} label="Stream Deck" state={snapshot.streamDeck.state} detail={snapshot.streamDeck.detail} />
                 <HealthItem icon={<Plug />} label="Local companion" state={snapshot.companion.state} detail={snapshot.companion.detail} />
               </div>
             )}
+          </section>
+        </>}
+
+        {activeView === "appearance" && <>
+          <header className="topbar">
+            <div>
+              <p className="section-kicker">Per-app status design</p>
+              <h1>Key appearance</h1>
+              <p className="topbar-copy">Set the background and motion for every task status. Codex and Claude keep independent palettes.</p>
+            </div>
+          </header>
+
+          <section className="appearance-panel page-panel" aria-labelledby="appearance-heading">
+            <div className="panel-heading appearance-heading">
+              <div>
+                <h2 id="appearance-heading">Status backgrounds and motion</h2>
+                <p>Changes save immediately and update both this preview and your Stream Deck keys.</p>
+              </div>
+              <div className="source-tabs" role="group" aria-label="App appearance">
+                {(Object.keys(SOURCE_META) as TaskSourceId[]).map((sourceId) => (
+                  <button
+                    key={sourceId}
+                    className={`source-tab source-tab-${sourceId}${appearanceSource === sourceId ? " source-tab-active" : ""}`}
+                    onClick={() => setAppearanceSource(sourceId)}
+                    aria-pressed={appearanceSource === sourceId}
+                  >
+                    <span>{SOURCE_META[sourceId].shortLabel}</span>
+                    {SOURCE_META[sourceId].label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <section className="typography-settings" aria-labelledby="typography-heading">
+              <div
+                className={`typography-preview task-source-${appearanceSource}`}
+                style={{
+                  "--task-background": selectedPreviewAppearance.backgroundColor,
+                  "--task-foreground": contrastForeground(selectedPreviewAppearance.backgroundColor),
+                  "--slot-handle-font-size": `${selectedTypography.slotHandleFontSize}px`,
+                  "--thread-name-font-size": `${selectedTypography.threadNameFontSize}px`,
+                } as React.CSSProperties}
+                aria-label={`${SOURCE_META[appearanceSource].label} text size preview`}
+              >
+                <span className="typography-preview-handle">{SOURCE_META[appearanceSource].shortLabel}3</span>
+                <strong>Configure task typography</strong>
+                <small>Working</small>
+              </div>
+              <div className="typography-controls">
+                <div className="typography-copy">
+                  <h3 id="typography-heading">Key text sizes</h3>
+                  <p>Set the slot handle and thread name independently for {SOURCE_META[appearanceSource].label}. Stream Deck scales them to its 144px key canvas.</p>
+                </div>
+                <label className="font-size-control">
+                  <span><strong>Slot handle</strong><small>Project label, such as {SOURCE_META[appearanceSource].shortLabel}3</small></span>
+                  <input
+                    type="range"
+                    min="12"
+                    max="28"
+                    step="1"
+                    value={selectedTypography.slotHandleFontSize}
+                    onChange={(event) => void updateTypography(appearanceSource, { slotHandleFontSize: Number(event.currentTarget.value) })}
+                    aria-label={`Slot handle font size for ${SOURCE_META[appearanceSource].label}`}
+                  />
+                  <output>{selectedTypography.slotHandleFontSize}px</output>
+                </label>
+                <label className="font-size-control">
+                  <span><strong>Thread name</strong><small>Full task title when it is shown</small></span>
+                  <input
+                    type="range"
+                    min="9"
+                    max="20"
+                    step="1"
+                    value={selectedTypography.threadNameFontSize}
+                    onChange={(event) => void updateTypography(appearanceSource, { threadNameFontSize: Number(event.currentTarget.value) })}
+                    aria-label={`Thread name font size for ${SOURCE_META[appearanceSource].label}`}
+                  />
+                  <output>{selectedTypography.threadNameFontSize}px</output>
+                </label>
+              </div>
+            </section>
+
+            <div className="appearance-status-grid">
+              {TITLE_STATES.map((status) => {
+                const setting = snapshot.displaySettings.statusAppearance[appearanceSource][status];
+                const sourceLabel = SOURCE_META[appearanceSource].label;
+                return (
+                  <article className="appearance-card" key={`${appearanceSource}-${status}`}>
+                    <div
+                      className={`appearance-preview task-source-${appearanceSource} motion-${setting.animation}`}
+                      style={{
+                        "--task-color": setting.backgroundColor,
+                        "--task-background": setting.backgroundColor,
+                        "--task-foreground": contrastForeground(setting.backgroundColor),
+                      } as React.CSSProperties}
+                      aria-hidden="true"
+                    >
+                      <span>{SOURCE_META[appearanceSource].shortLabel}</span>
+                      <strong>{STATUS_META[status].label.slice(0, 1)}</strong>
+                    </div>
+                    <div className="appearance-card-body">
+                      <div className="appearance-card-title">
+                        <div><h3>{STATUS_META[status].label}</h3><p>{STATUS_META[status].description}</p></div>
+                        <label className="color-control">
+                          <input
+                            type="color"
+                            value={setting.backgroundColor}
+                            onChange={(event) => void updateStatusAppearance(appearanceSource, status, { backgroundColor: event.currentTarget.value })}
+                            aria-label={`Background color for ${sourceLabel} ${STATUS_META[status].label}`}
+                          />
+                          <output>{setting.backgroundColor}</output>
+                        </label>
+                      </div>
+                      <div className="animation-options" role="group" aria-label={`Animation for ${sourceLabel} ${STATUS_META[status].label}`}>
+                        {ANIMATION_META.map((animation) => (
+                          <button
+                            key={animation.id}
+                            className={setting.animation === animation.id ? "animation-selected" : ""}
+                            onClick={() => void updateStatusAppearance(appearanceSource, status, { animation: animation.id })}
+                            aria-pressed={setting.animation === animation.id}
+                            aria-label={`Use ${animation.label} animation for ${sourceLabel} ${STATUS_META[status].label}`}
+                            title={animation.description}
+                          >
+                            {animation.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </section>
         </>}
 
@@ -335,7 +800,7 @@ export function App() {
             <div>
               <p className="section-kicker">Stream Deck appearance</p>
               <h1>Key labels</h1>
-              <p className="topbar-copy">Choose when a Stream Deck key includes the full Codex task name.</p>
+              <p className="topbar-copy">Choose when a Stream Deck key includes the full Codex or Claude task name.</p>
             </div>
           </header>
 
@@ -349,7 +814,13 @@ export function App() {
             <div className="title-settings-grid">
               {TITLE_STATES.map((status) => (
                 <label className="title-setting-option" key={status}>
-                  <span className={`title-setting-dot swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
+                  <span
+                    className="title-setting-dot"
+                    style={{
+                      "--codex-color": snapshot.displaySettings.statusAppearance.codex[status].backgroundColor,
+                      "--claude-color": snapshot.displaySettings.statusAppearance.claude[status].backgroundColor,
+                    } as React.CSSProperties}
+                  />
                   <span className="title-setting-copy"><strong>{STATUS_META[status].label}</strong><small>{snapshot.displaySettings.showThreadTitle[status] ? "Title shown" : "Compact label only"}</small></span>
                   <span className="label-toggle">
                     <input
@@ -369,14 +840,20 @@ export function App() {
             <div className="panel-heading">
               <div>
                 <h2 id="behavior-heading">Attention signals</h2>
-                <p>Color and motion communicate task state at a glance.</p>
+                <p>Color and motion now follow the per-app choices in Appearance.</p>
               </div>
             </div>
             <div className="behavior-list">
               {TITLE_STATES.map((status) => (
                 <div className="behavior-row" key={status}>
-                  <span className={`behavior-swatch swatch-${status}`} style={{ "--task-color": STATUS_META[status].color } as React.CSSProperties} />
-                  <div><strong>{STATUS_META[status].label}</strong><p>{STATUS_META[status].description}</p></div>
+                  <span
+                    className="behavior-swatch"
+                    style={{
+                      "--codex-color": snapshot.displaySettings.statusAppearance.codex[status].backgroundColor,
+                      "--claude-color": snapshot.displaySettings.statusAppearance.claude[status].backgroundColor,
+                    } as React.CSSProperties}
+                  />
+                  <div><strong>{STATUS_META[status].label}</strong><p>Codex and Claude can use different colors and motion.</p></div>
                 </div>
               ))}
             </div>
@@ -404,7 +881,7 @@ export function App() {
             {events.length === 0 ? (
               <div className="empty-state">
                 <TerminalWindow />
-                <div><strong>No activity yet</strong><p>Task changes will appear here as Codex works.</p></div>
+                <div><strong>No activity yet</strong><p>Codex and Claude task changes will appear here.</p></div>
               </div>
             ) : events.map((event) => (
               <div className="event-row" key={event.id}>

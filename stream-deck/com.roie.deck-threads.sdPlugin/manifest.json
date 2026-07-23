@@ -1,14 +1,14 @@
 {
   "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
   "Name": "Deck Threads",
-  "Version": "1.0.0.0",
+  "Version": "1.0.1.0",
   "Author": "rschwabco",
   "Actions": [
     {
       "Name": "Task slot",
       "UUID": "com.roie.deck-threads.thread",
       "Icon": "imgs/actions/thread/icon",
-      "Tooltip": "Shows a live Codex Desktop task and opens it when pressed.",
+      "Tooltip": "Shows a live Codex or Claude task and opens it when pressed.",
       "PropertyInspectorPath": "ui/property-inspector.html",
       "Controllers": [
         "Keypad"
@@ -25,7 +25,7 @@
   "Category": "Deck Threads",
   "CategoryIcon": "imgs/plugin/category-icon",
   "CodePath": "bin/plugin.js",
-  "Description": "Unofficial local companion for showing live Codex Desktop tasks on Stream Deck and opening them with one press.",
+  "Description": "Unofficial local companion for showing live Codex and Claude tasks on Stream Deck and opening them with one press.",
   "Icon": "imgs/plugin/marketplace",
   "SDKVersion": 3,
   "Software": {

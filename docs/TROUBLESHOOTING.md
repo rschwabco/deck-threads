@@ -17,13 +17,22 @@ If another process is already using port `9876`, quit that process or the older 
 - Quit and reopen both Codex Desktop and Deck Threads.
 - Install the newest Deck Threads release. Codex Desktop's local interfaces can change over time, and a compatibility update may be required.
 
+## Deck Threads cannot see Claude
+
+- Confirm Claude Code or Claude Desktop is installed and up to date.
+- Start a Claude Code session; normal Claude chat tabs and inactive session history are not shown.
+- Run `claude agents --json` in Terminal. It should return the active local sessions Deck Threads can monitor.
+- Quit and reopen Claude and Deck Threads after updating either app.
+
 ## A key opens the wrong task
 
 Open the Deck Threads window and compare the slot number and compact label with the physical key. If the wrong task still opens, quit Deck Threads, reopen it, and try again. Please include both labels—but no sensitive task content—in a support report.
 
 ## Questions or needs-input tasks do not turn orange
 
-In the Stream Deck app, select one of the eight task keys. Its action must be **Deck Threads → Task slot**. Older development profiles may still use **Codex Threads → Codex task**; those actions do not support the orange question state. Replace each legacy action with **Deck Threads → Task slot** in the same position, then restart Stream Deck. The slot number is inferred from the key's position.
+In the Stream Deck app, select one of the eight task keys. Its action must be **Deck Threads → Task slot**. Older development profiles may still use **Codex Threads → Codex task**; those actions do not support the current source borders or status surfaces. Replace each legacy action with **Deck Threads → Task slot** in the same position, then restart Stream Deck. The slot number is inferred from the key's position.
+
+Claude question detection depends on the active local session recording its question tool event. If its status surface remains in the working state, refresh Deck Threads and confirm the session is still listed by `claude agents --json`.
 
 ## The bundled profile is missing
 
