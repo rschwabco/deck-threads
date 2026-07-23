@@ -1,5 +1,5 @@
-const INSTALLER_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Installer.dmg";
-const COMPANION_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Companion.dmg";
+const INSTALLER_DOWNLOAD = "/download/installer";
+const COMPANION_DOWNLOAD = "/download/companion";
 
 const keys = [
   { label: "DT1", title: "Deck Threads site", state: "working" },
@@ -22,14 +22,14 @@ export default function HeroStage() {
           Deck Threads puts eight active coding-agent tasks on Stream Deck. See what needs you and press a key to open the exact task.
         </p>
         <div className="hero-actions">
-          <a className="button button-primary" href={INSTALLER_DOWNLOAD} download>
-            <span>Download app + plugin (.dmg)</span><span aria-hidden="true">↓</span>
+          <a className="button button-primary" href={INSTALLER_DOWNLOAD}>
+            <span>Download app + plugin (.pkg)</span><span aria-hidden="true">↓</span>
           </a>
-          <a className="button button-secondary" href={COMPANION_DOWNLOAD} download>
-            Companion app only (.dmg)
+          <a className="button button-secondary" href={COMPANION_DOWNLOAD}>
+            Companion app only (.pkg)
           </a>
         </div>
-        <p className="requirements">Universal macOS beta · Developer ID signed · Apple notarization pending</p>
+        <p className="requirements">Universal macOS · Developer ID signed · Apple notarized</p>
       </div>
 
       <div

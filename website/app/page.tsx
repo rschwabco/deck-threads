@@ -1,8 +1,8 @@
 import HeroStage from "./hero-stage";
 import VisualParallax from "./visual-parallax";
 
-const INSTALLER_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Installer.dmg";
-const COMPANION_DOWNLOAD = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.1/Deck-Threads-Companion.dmg";
+const INSTALLER_DOWNLOAD = "/download/installer";
+const COMPANION_DOWNLOAD = "/download/companion";
 
 const footerKeys = ["DT1", "MP1", "QA2", "?", "NX1", "DT2", "AS1", "MP2"];
 
@@ -50,7 +50,7 @@ export default function Home() {
         <div className="section-kicker">Three short steps</div>
         <h2>From download to working keys.</h2>
         <div className="steps">
-          <article><span>1</span><div><h3>Install</h3><p>Download the DMG and drag Deck Threads into Applications.</p></div></article>
+          <article><span>1</span><div><h3>Install</h3><p>Download the signed installer package and follow the macOS prompts.</p></div></article>
           <article><span>2</span><div><h3>Launch once</h3><p>The all-in-one build installs or updates the bundled Stream Deck plugin automatically.</p></div></article>
           <article><span>3</span><div><h3>Press a key</h3><p>Deck Threads opens the matching task in your desktop coding agent.</p></div></article>
         </div>
@@ -65,10 +65,10 @@ export default function Home() {
           <div className="section-kicker">Ready when you are</div>
           <h2>Put your tasks<br />within reach.</h2>
           <div className="hero-actions">
-            <a className="button button-light" href={INSTALLER_DOWNLOAD} download>Download app + plugin (.dmg) <span aria-hidden="true">↓</span></a>
-            <a className="button button-ghost" href={COMPANION_DOWNLOAD} download>Companion app only (.dmg)</a>
+            <a className="button button-light" href={INSTALLER_DOWNLOAD}>Download app + plugin (.pkg) <span aria-hidden="true">↓</span></a>
+            <a className="button button-ghost" href={COMPANION_DOWNLOAD}>Companion app only (.pkg)</a>
           </div>
-          <p className="requirements">Universal macOS beta · Developer ID signed · Apple notarization pending</p>
+          <p className="requirements">Universal macOS · Developer ID signed · Apple notarized</p>
         </div>
       </section>
 
