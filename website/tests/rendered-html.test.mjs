@@ -83,6 +83,36 @@ test("download routes select the newest complete published release, including pr
   }
 });
 
+test("download routes still resolve when the edge cache is unavailable", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const expectedInstaller = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.2/Deck-Threads-Installer.pkg";
+  globalThis.fetch = async () => Response.json([{
+    draft: false,
+    published_at: "2026-07-23T01:26:41Z",
+    assets: [
+      { name: "Deck-Threads-Installer.pkg", browser_download_url: expectedInstaller },
+      { name: "Deck-Threads-Companion.pkg", browser_download_url: "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1-beta.2/Deck-Threads-Companion.pkg" },
+    ],
+  }]);
+  globalThis.caches = {
+    default: {
+      async match() {
+        throw new Error("cache is unavailable");
+      },
+    },
+  };
+
+  try {
+    const response = await render("/download/installer");
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), expectedInstaller);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.caches = originalCaches;
+  }
+});
+
 test("renders all eight stable task slots", async () => {
   const html = await (await render()).text();
   const taskKeyCount = (html.match(/class="task-key /g) ?? []).length;

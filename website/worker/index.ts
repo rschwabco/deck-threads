@@ -80,7 +80,15 @@ async function handleDownload(request: Request, assetName: string, ctx: Executio
   const edgeCache = cacheStorage?.default;
   const requestUrl = new URL(request.url);
   const cacheKey = new Request(`${requestUrl.origin}${requestUrl.pathname}`);
-  const cached = await edgeCache?.match(cacheKey);
+  let cached: Response | undefined;
+  let edgeCacheAvailable = Boolean(edgeCache);
+  try {
+    cached = await edgeCache?.match(cacheKey);
+  } catch {
+    // The Sites runtime can expose CacheStorage before its default cache is
+    // available. A cache miss must never prevent a fresh release lookup.
+    edgeCacheAvailable = false;
+  }
   if (cached) return cached;
 
   try {
@@ -98,7 +106,9 @@ async function handleDownload(request: Request, assetName: string, ctx: Executio
         "X-Content-Type-Options": "nosniff",
       },
     });
-    if (edgeCache) ctx.waitUntil(edgeCache.put(cacheKey, redirect.clone()));
+    if (edgeCache && edgeCacheAvailable) {
+      ctx.waitUntil(edgeCache.put(cacheKey, redirect.clone()).catch(() => undefined));
+    }
     return redirect;
   } catch {
     return errorResponse("The latest Deck Threads download is temporarily unavailable.", 503);
