@@ -20,12 +20,16 @@ done
 
 complete_payload="$(pkgutil --payload-files "$complete_package")"
 companion_payload="$(pkgutil --payload-files "$companion_package")"
+bundled_plugin_manifest="./Applications/Deck Threads.app/Contents/Resources/stream-deck-plugin/com.roie.deck-threads.sdPlugin/manifest.json"
+installer_plugin_manifest="./Library/Application Support/Deck Threads/Installer/com.roie.deck-threads.sdPlugin/manifest.json"
 
 grep -q '^\./Applications/Deck Threads.app/' <<<"$complete_payload"
-grep -q '^\./Library/Application Support/Deck Threads/Installer/com.roie.deck-threads.sdPlugin/manifest.json$' <<<"$complete_payload"
+grep -Fqx "$bundled_plugin_manifest" <<<"$complete_payload"
+grep -Fqx "$installer_plugin_manifest" <<<"$complete_payload"
 grep -q '^\./Applications/Deck Threads.app/' <<<"$companion_payload"
-if grep -q 'com.roie.deck-threads.sdPlugin' <<<"$companion_payload"; then
-  echo "The companion-only installer unexpectedly contains the Stream Deck plugin." >&2
+grep -Fqx "$bundled_plugin_manifest" <<<"$companion_payload"
+if grep -Fqx "$installer_plugin_manifest" <<<"$companion_payload"; then
+  echo "The companion-only installer unexpectedly contains a Stream Deck plugin installation payload." >&2
   exit 1
 fi
 

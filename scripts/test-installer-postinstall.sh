@@ -30,6 +30,11 @@ run_postinstall() {
     "$project_root/installer/scripts/postinstall"
 }
 
+# The companion-only installer has no external plugin payload. Installing it
+# must not create a Stream Deck plugin from the copy bundled inside the app.
+run_postinstall
+[[ ! -e "$destination_plugin" ]]
+
 write_plugin "$source_plugin" "1.0.1.0" "bundled"
 run_postinstall
 [[ "$(<"$destination_plugin/marker.txt")" == "bundled" ]]
