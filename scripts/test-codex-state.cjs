@@ -282,8 +282,14 @@ try {
   ]), "Latest Claude title");
   const linkTaskId = "88888888-8888-4888-8888-888888888888";
   assert.equal(taskDeepLink("claude", linkTaskId), `claude://resume?session=${linkTaskId}`);
+  const claudeDesktopOpenId = "88888888-8888-4888-8888-888888888888";
+  assert.equal(
+    taskDeepLink("claude", linkTaskId, claudeDesktopOpenId),
+    `claude://claude.ai/claude-code-desktop/local_${claudeDesktopOpenId}`,
+  );
   assert.equal(taskDeepLink("codex", linkTaskId), `codex://threads/${linkTaskId}`);
   assert.throws(() => taskDeepLink("claude", "not-a-thread-id"), /invalid task ID/i);
+  assert.throws(() => taskDeepLink("claude", linkTaskId, "not-a-thread-id"), /invalid task ID/i);
   const claudeSessionId = "77777777-7777-4777-8777-777777777777";
   const claudeDesktopSessionId = "66666666-6666-4666-8666-666666666666";
   const claudeProjectPath = path.join(temporaryRoot, "claude", "projects", "-tmp-deck-threads");
@@ -380,6 +386,10 @@ try {
   assert.equal(claudeTasks[0].projectLabel, "DT1");
   assert.equal(claudeTasks[0].title, "Claude sidebar thread name");
   assert.equal(claudeTasks[0].pinned, true);
+  assert.equal(tasksFromClaudeAgents(claudeAgents, {
+    claudeHome: path.join(temporaryRoot, "claude"),
+    claudeDesktopRoot: path.join(temporaryRoot, "missing-claude-desktop"),
+  })[0].openId, undefined);
   fs.writeFileSync(claudeSessionMetadataPath, JSON.stringify({
     sessionId: `local_${claudeDesktopSessionId}`,
     cliSessionId: claudeSessionId,

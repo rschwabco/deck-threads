@@ -350,11 +350,12 @@ function initializeUpdateController() {
   }
 }
 
-async function openTask(sourceId, threadId, title) {
-  const deepLink = taskDeepLink(sourceId, threadId);
+async function openTask(sourceId, threadId, title, openId) {
+  const deepLink = taskDeepLink(sourceId, threadId, openId);
   const sourceName = sourceId === "claude" ? "Claude" : "Codex";
-  if (sourceId === "claude" && process.platform === "darwin") {
-    await execFileAsync("/usr/bin/open", [deepLink], { timeout: 3000 });
+  if (process.platform === "darwin") {
+    const bundleId = sourceId === "claude" ? "com.anthropic.claudefordesktop" : "com.openai.codex";
+    await execFileAsync("/usr/bin/open", ["-b", bundleId, deepLink], { timeout: 3000 });
   } else {
     await shell.openExternal(deepLink);
   }
@@ -405,10 +406,17 @@ function startBridgeServer() {
       if (openMatch) {
         const sourceId = openMatch[1].toLowerCase();
         const threadId = openMatch[2];
-        const task = (await readLiveTaskState()).tasks.find((candidate) =>
+        const suppliedTitle = url.searchParams.get("title");
+        const suppliedOpenId = url.searchParams.get("openId") || undefined;
+        const task = suppliedTitle ? undefined : (await readLiveTaskState()).tasks.find((candidate) =>
           candidate?.sourceId === sourceId && candidate.id === threadId,
         );
-        const result = await openTask(sourceId, task?.openId || threadId, task?.title || "task");
+        const result = await openTask(
+          sourceId,
+          threadId,
+          suppliedTitle || task?.title || "task",
+          suppliedOpenId || task?.openId,
+        );
         sendJson(response, 200, result);
         return;
       }
@@ -562,7 +570,7 @@ ipcMain.handle("bridge:set-source-allocation", (_event, value) => {
 
 ipcMain.handle("bridge:open-task", async (_event, sourceId, threadId, title, openId) => {
   try {
-    return await openTask(sourceId, openId || threadId, title);
+    return await openTask(sourceId, threadId, title, openId);
   } catch (error) {
     emitEvent(sourceId === "claude" ? "claude" : "codex", "error", "Could not open task", error.message);
     return { ok: false, message: error.message };
