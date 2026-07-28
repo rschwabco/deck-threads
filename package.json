@@ -1,7 +1,7 @@
 {
   "name": "deck-threads-companion",
   "productName": "Deck Threads",
-  "version": "1.0.1-beta.3",
+  "version": "1.0.1",
   "private": true,
   "author": "Roie",
   "description": "A local companion that brings live Codex and Claude tasks to Stream Deck.",
@@ -33,6 +33,7 @@
     "test:bundled-plugin": "node scripts/test-bundled-plugin.cjs",
     "test:installer-postinstall": "bash scripts/test-installer-postinstall.sh",
     "test:state": "node scripts/test-codex-state.cjs",
+    "test:runtime-smoke": "node scripts/smoke-electron-runtime.cjs",
     "qa:electron": "node scripts/qa-electron.cjs",
     "streamdeck:build": "npm --prefix stream-deck run build",
     "streamdeck:validate": "npm --prefix stream-deck run validate",
