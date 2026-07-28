@@ -2,14 +2,17 @@ import streamDeck, {
   action,
   KeyAction,
   KeyDownEvent,
+  KeyUpEvent,
   PropertyInspectorDidAppearEvent,
   SendToPluginEvent,
   SingletonAction,
   Target,
   WillAppearEvent,
+  WillDisappearEvent,
 } from "@elgato/streamdeck";
 import { companionClient } from "./companion-client";
 import { threadKey } from "./key-art";
+import { NonOverlappingTask } from "./non-overlapping-task";
 
 type ThreadSlotSettings = { slot?: number };
 type InspectorCommand = { command?: string };
@@ -37,27 +40,56 @@ function threadSlotFor(action: KeyAction<ThreadSlotSettings>, settings: ThreadSl
 @action({ UUID: "com.roie.deck-threads.thread" })
 export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
   private signatures = new Map<string, string>();
+  private titleSignatures = new Map<string, string>();
+  private renderGate = new NonOverlappingTask();
 
   override async onWillAppear(event: WillAppearEvent<ThreadSlotSettings>) {
     if (!event.action.isKey()) return;
+    this.signatures.delete(event.action.id);
+    this.titleSignatures.delete(event.action.id);
     await this.render(event.action, threadSlotFor(event.action, event.payload.settings), animationFrame);
+  }
+
+  override onWillDisappear(event: WillDisappearEvent<ThreadSlotSettings>) {
+    this.signatures.delete(event.action.id);
+    this.titleSignatures.delete(event.action.id);
   }
 
   override async onKeyDown(event: KeyDownEvent<ThreadSlotSettings>) {
     if (!event.action.isKey()) return;
     const slot = threadSlotFor(event.action, event.payload.settings);
     const task = companionClient.tasks[slot];
+    streamDeck.logger.info(`Pressed task slot ${slot}`, {
+      actionId: event.action.id,
+      online: companionClient.online,
+      taskId: task?.id || null,
+      sourceId: task?.sourceId || null,
+    });
     if (!companionClient.online || !task) {
+      streamDeck.logger.warn(`Rejected task slot ${slot}`, {
+        online: companionClient.online,
+        hasTask: Boolean(task),
+      });
       await event.action.showAlert();
       return;
     }
     try {
-      await companionClient.openThread(task.sourceId, task.id);
+      await companionClient.openThread(task);
+      streamDeck.logger.info(`Opened ${task.sourceId} task in slot ${slot}`, { taskId: task.id });
       await event.action.showOk();
       setTimeout(() => void refreshAllActions(), 650);
-    } catch {
+    } catch (error) {
+      streamDeck.logger.error(`Failed to open ${task.sourceId} task in slot ${slot}`, error);
       await event.action.showAlert();
     }
+  }
+
+  override async onKeyUp(event: KeyUpEvent<ThreadSlotSettings>) {
+    if (!event.action.isKey()) return;
+    const slot = threadSlotFor(event.action, event.payload.settings);
+    streamDeck.logger.info(`Released task slot ${slot}`, {
+      actionId: event.action.id,
+    });
   }
 
   override async onPropertyInspectorDidAppear(_event: PropertyInspectorDidAppearEvent<ThreadSlotSettings>) {
@@ -78,7 +110,14 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     await streamDeck.ui.sendToPropertyInspector(inspectorStatus());
   }
 
-  async renderAll(frame = animationFrame) {
+  renderAll(frame = animationFrame): Promise<void> {
+    // Stream Deck image updates can take longer than an animation tick. Never
+    // queue another full-device render behind one that is still in flight: a
+    // backlog here blocks key events for the entire device.
+    return this.renderGate.run(() => this.performRenderAll(frame));
+  }
+
+  private async performRenderAll(frame: number) {
     await Promise.allSettled([...this.actions].filter((current) => current.isKey()).map(async (current) => {
       const settings = await current.getSettings<ThreadSlotSettings>();
       await this.render(current, threadSlotFor(current, settings), frame);
@@ -95,9 +134,11 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     if (this.signatures.get(current.id) === signature) return;
     try {
       const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle, appearance, typography);
-      await current.setImage(image, { target: Target.Hardware });
-      await current.setImage(image, { target: Target.Software });
-      await current.setTitle("", { target: Target.HardwareAndSoftware });
+      await current.setImage(image, { target: Target.HardwareAndSoftware });
+      if (this.titleSignatures.get(current.id) !== "") {
+        await current.setTitle("", { target: Target.HardwareAndSoftware });
+        this.titleSignatures.set(current.id, "");
+      }
       this.signatures.set(current.id, signature);
     } catch (error) {
       streamDeck.logger.error(`Failed to render thread slot ${slot}`, error);

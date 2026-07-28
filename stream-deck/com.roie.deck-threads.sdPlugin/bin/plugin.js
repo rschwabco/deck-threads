@@ -9307,15 +9307,18 @@ class CompanionClient {
     typographyFor(task) {
         return this.displaySettings.typography[task.sourceId];
     }
-    async openThread(sourceId, threadId) {
-        let response = await fetch(`${BASE_URL}/threads/${sourceId}/${encodeURIComponent(threadId)}/open`, {
+    async openThread(task) {
+        const query = new URLSearchParams({ title: task.title || "task" });
+        if (task.openId)
+            query.set("openId", task.openId);
+        let response = await fetch(`${BASE_URL}/threads/${task.sourceId}/${encodeURIComponent(task.id)}/open?${query}`, {
             method: "POST",
-            signal: AbortSignal.timeout(2000),
+            signal: AbortSignal.timeout(5000),
         });
-        if (sourceId === "codex" && response.status === 404) {
-            response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(threadId)}/open`, {
+        if (task.sourceId === "codex" && response.status === 404) {
+            response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(task.id)}/open`, {
                 method: "POST",
-                signal: AbortSignal.timeout(2000),
+                signal: AbortSignal.timeout(5000),
             });
         }
         if (!response.ok)
@@ -9528,6 +9531,20 @@ function threadKey(task, slot, online, frame = 0, showThreadTitle = task?.status
     ${task.pinned ? pinIcon(foreground) : ""}`, background, palette.border);
 }
 
+class NonOverlappingTask {
+    running;
+    run(task) {
+        if (this.running)
+            return this.running;
+        this.running = Promise.resolve()
+            .then(task)
+            .finally(() => {
+            this.running = undefined;
+        });
+        return this.running;
+    }
+}
+
 let animationFrame = 0;
 function inspectorStatus() {
     return {
@@ -9562,28 +9579,56 @@ let ThreadSlotAction = (() => {
             __runInitializers(_classThis, _classExtraInitializers);
         }
         signatures = new Map();
+        titleSignatures = new Map();
+        renderGate = new NonOverlappingTask();
         async onWillAppear(event) {
             if (!event.action.isKey())
                 return;
+            this.signatures.delete(event.action.id);
+            this.titleSignatures.delete(event.action.id);
             await this.render(event.action, threadSlotFor(event.action, event.payload.settings), animationFrame);
+        }
+        onWillDisappear(event) {
+            this.signatures.delete(event.action.id);
+            this.titleSignatures.delete(event.action.id);
         }
         async onKeyDown(event) {
             if (!event.action.isKey())
                 return;
             const slot = threadSlotFor(event.action, event.payload.settings);
             const task = companionClient.tasks[slot];
+            streamDeck.logger.info(`Pressed task slot ${slot}`, {
+                actionId: event.action.id,
+                online: companionClient.online,
+                taskId: task?.id || null,
+                sourceId: task?.sourceId || null,
+            });
             if (!companionClient.online || !task) {
+                streamDeck.logger.warn(`Rejected task slot ${slot}`, {
+                    online: companionClient.online,
+                    hasTask: Boolean(task),
+                });
                 await event.action.showAlert();
                 return;
             }
             try {
-                await companionClient.openThread(task.sourceId, task.id);
+                await companionClient.openThread(task);
+                streamDeck.logger.info(`Opened ${task.sourceId} task in slot ${slot}`, { taskId: task.id });
                 await event.action.showOk();
                 setTimeout(() => void refreshAllActions(), 650);
             }
-            catch {
+            catch (error) {
+                streamDeck.logger.error(`Failed to open ${task.sourceId} task in slot ${slot}`, error);
                 await event.action.showAlert();
             }
+        }
+        async onKeyUp(event) {
+            if (!event.action.isKey())
+                return;
+            const slot = threadSlotFor(event.action, event.payload.settings);
+            streamDeck.logger.info(`Released task slot ${slot}`, {
+                actionId: event.action.id,
+            });
         }
         async onPropertyInspectorDidAppear(_event) {
             await companionClient.refresh();
@@ -9602,7 +9647,13 @@ let ThreadSlotAction = (() => {
             await companionClient.refresh();
             await streamDeck.ui.sendToPropertyInspector(inspectorStatus());
         }
-        async renderAll(frame = animationFrame) {
+        renderAll(frame = animationFrame) {
+            // Stream Deck image updates can take longer than an animation tick. Never
+            // queue another full-device render behind one that is still in flight: a
+            // backlog here blocks key events for the entire device.
+            return this.renderGate.run(() => this.performRenderAll(frame));
+        }
+        async performRenderAll(frame) {
             await Promise.allSettled([...this.actions].filter((current) => current.isKey()).map(async (current) => {
                 const settings = await current.getSettings();
                 await this.render(current, threadSlotFor(current, settings), frame);
@@ -9619,9 +9670,11 @@ let ThreadSlotAction = (() => {
                 return;
             try {
                 const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle, appearance, typography);
-                await current.setImage(image, { target: Target.Hardware });
-                await current.setImage(image, { target: Target.Software });
-                await current.setTitle("", { target: Target.HardwareAndSoftware });
+                await current.setImage(image, { target: Target.HardwareAndSoftware });
+                if (this.titleSignatures.get(current.id) !== "") {
+                    await current.setTitle("", { target: Target.HardwareAndSoftware });
+                    this.titleSignatures.set(current.id, "");
+                }
                 this.signatures.set(current.id, signature);
             }
             catch (error) {
@@ -9641,12 +9694,14 @@ async function animateThreadActions() {
     await threadSlotAction.renderAll(animationFrame);
 }
 
+const REFRESH_INTERVAL_MS = 1500;
+const ANIMATION_INTERVAL_MS = 250;
 streamDeck.logger.setLevel("info");
 streamDeck.actions.registerAction(threadSlotAction);
 streamDeck.connect();
 void refreshAllActions();
-setInterval(() => void refreshAllActions(), 1500);
-setInterval(() => void animateThreadActions(), 120);
+setInterval(() => void refreshAllActions(), REFRESH_INTERVAL_MS);
+setInterval(() => void animateThreadActions(), ANIMATION_INTERVAL_MS);
 setTimeout(() => {
     streamDeck.logger.info("Deck Threads ready", {
         companionOnline: companionClient.online,

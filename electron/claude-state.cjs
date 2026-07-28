@@ -382,7 +382,7 @@ function tasksFromClaudeAgents(agents, options = {}) {
     const desktopOpenId = desktopSessionId.replace(/^local_/, "");
     return [{
       id: agent.sessionId,
-      openId: /^[0-9a-f-]{36}$/i.test(desktopOpenId) ? desktopOpenId : agent.sessionId,
+      openId: /^[0-9a-f-]{36}$/i.test(desktopOpenId) ? desktopOpenId : undefined,
       stableId: `${CLAUDE_SOURCE_ID}:${agent.sessionId}`,
       sourceId: CLAUDE_SOURCE_ID,
       sourceName: "Claude",

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.0.2-beta.1 — 2026-07-28
+
+- Prevented animated task keys from flooding the Stream Deck render queue and freezing the device when the Deck Threads page opens.
+- Restored one-press Codex and Claude task foregrounding from physical Stream Deck keys, including source-specific task targets and explicit macOS app activation.
+
 ## 1.0.1 — 2026-07-24
 
 - Promoted the signed and notarized beta.3 build after verifying in-app update and automatic restart, companion reconnection, provider-specific task opening, packaged-plugin preservation, and isolated first-run behavior.

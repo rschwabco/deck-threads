@@ -1,11 +1,12 @@
 {
   "name": "deck-threads-stream-deck",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "scripts": {
     "build:profile": "node scripts/build-profile.mjs",
     "build": "npm run build:profile && rollup -c",
+    "test": "node --test tests/*.test.mjs",
     "validate": "streamdeck validate com.roie.deck-threads.sdPlugin",
     "link": "npm run build && streamdeck link com.roie.deck-threads.sdPlugin",
     "restart": "streamdeck restart com.roie.deck-threads",

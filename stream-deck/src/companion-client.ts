@@ -184,15 +184,17 @@ export class CompanionClient {
     return this.displaySettings.typography[task.sourceId];
   }
 
-  async openThread(sourceId: TaskSourceId, threadId: string) {
-    let response = await fetch(`${BASE_URL}/threads/${sourceId}/${encodeURIComponent(threadId)}/open`, {
+  async openThread(task: AgentTask) {
+    const query = new URLSearchParams({ title: task.title || "task" });
+    if (task.openId) query.set("openId", task.openId);
+    let response = await fetch(`${BASE_URL}/threads/${task.sourceId}/${encodeURIComponent(task.id)}/open?${query}`, {
       method: "POST",
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(5000),
     });
-    if (sourceId === "codex" && response.status === 404) {
-      response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(threadId)}/open`, {
+    if (task.sourceId === "codex" && response.status === 404) {
+      response = await fetch(`${BASE_URL}/threads/${encodeURIComponent(task.id)}/open`, {
         method: "POST",
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(5000),
       });
     }
     if (!response.ok) throw new Error(`Could not open thread (${response.status})`);
