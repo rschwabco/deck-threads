@@ -16,7 +16,6 @@ import { NonOverlappingTask } from "./non-overlapping-task";
 
 type ThreadSlotSettings = { slot?: number };
 type InspectorCommand = { command?: string };
-let animationFrame = 0;
 
 function inspectorStatus() {
   return {
@@ -47,7 +46,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     if (!event.action.isKey()) return;
     this.signatures.delete(event.action.id);
     this.titleSignatures.delete(event.action.id);
-    await this.render(event.action, threadSlotFor(event.action, event.payload.settings), animationFrame);
+    await this.render(event.action, threadSlotFor(event.action, event.payload.settings));
   }
 
   override onWillDisappear(event: WillDisappearEvent<ThreadSlotSettings>) {
@@ -110,30 +109,38 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     await streamDeck.ui.sendToPropertyInspector(inspectorStatus());
   }
 
-  renderAll(frame = animationFrame): Promise<void> {
+  renderAll(): Promise<void> {
     // Stream Deck image updates can take longer than an animation tick. Never
     // queue another full-device render behind one that is still in flight: a
     // backlog here blocks key events for the entire device.
-    return this.renderGate.run(() => this.performRenderAll(frame));
+    return this.renderGate.run(() => this.performRenderAll());
   }
 
-  private async performRenderAll(frame: number) {
-    await Promise.allSettled([...this.actions].filter((current) => current.isKey()).map(async (current) => {
-      const settings = await current.getSettings<ThreadSlotSettings>();
-      await this.render(current, threadSlotFor(current, settings), frame);
-    }));
+  private async performRenderAll() {
+    // Serialize initial key updates. A companion launch can change all eight
+    // keys at once, and a single ordered stream is safer for the hardware than
+    // a burst of simultaneous image commands.
+    for (const current of [...this.actions].filter((action) => action.isKey())) {
+      try {
+        const settings = await current.getSettings<ThreadSlotSettings>();
+        await this.render(current, threadSlotFor(current, settings));
+      } catch (error) {
+        streamDeck.logger.error(`Failed to read settings for action ${current.id}`, error);
+      }
+    }
   }
 
-  private async render(current: KeyAction<ThreadSlotSettings>, slot: number, frame: number) {
+  private async render(current: KeyAction<ThreadSlotSettings>, slot: number) {
     const task = companionClient.tasks[slot];
     const appearance = task ? companionClient.appearanceFor(task) : undefined;
     const typography = task ? companionClient.typographyFor(task) : undefined;
-    const animatedFrame = appearance?.animation === "still" ? 0 : frame;
     const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-    const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}:${animatedFrame}`;
+    const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`;
     if (this.signatures.get(current.id) === signature) return;
     try {
-      const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle, appearance, typography);
+      // Keep status visuals static on the physical device. Continuous image
+      // writes can block the Stream Deck host's HID key-reading path.
+      const image = threadKey(task, slot, companionClient.online, 0, showThreadTitle, appearance, typography);
       await current.setImage(image, { target: Target.HardwareAndSoftware });
       if (this.titleSignatures.get(current.id) !== "") {
         await current.setTitle("", { target: Target.HardwareAndSoftware });
@@ -151,9 +158,4 @@ export const threadSlotAction = new ThreadSlotAction();
 export async function refreshAllActions() {
   await companionClient.refresh();
   await threadSlotAction.renderAll();
-}
-
-export async function animateThreadActions() {
-  animationFrame += 1;
-  await threadSlotAction.renderAll(animationFrame);
 }

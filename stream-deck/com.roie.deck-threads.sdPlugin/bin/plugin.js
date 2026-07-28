@@ -9545,7 +9545,6 @@ class NonOverlappingTask {
     }
 }
 
-let animationFrame = 0;
 function inspectorStatus() {
     return {
         type: "status",
@@ -9586,7 +9585,7 @@ let ThreadSlotAction = (() => {
                 return;
             this.signatures.delete(event.action.id);
             this.titleSignatures.delete(event.action.id);
-            await this.render(event.action, threadSlotFor(event.action, event.payload.settings), animationFrame);
+            await this.render(event.action, threadSlotFor(event.action, event.payload.settings));
         }
         onWillDisappear(event) {
             this.signatures.delete(event.action.id);
@@ -9647,29 +9646,38 @@ let ThreadSlotAction = (() => {
             await companionClient.refresh();
             await streamDeck.ui.sendToPropertyInspector(inspectorStatus());
         }
-        renderAll(frame = animationFrame) {
+        renderAll() {
             // Stream Deck image updates can take longer than an animation tick. Never
             // queue another full-device render behind one that is still in flight: a
             // backlog here blocks key events for the entire device.
-            return this.renderGate.run(() => this.performRenderAll(frame));
+            return this.renderGate.run(() => this.performRenderAll());
         }
-        async performRenderAll(frame) {
-            await Promise.allSettled([...this.actions].filter((current) => current.isKey()).map(async (current) => {
-                const settings = await current.getSettings();
-                await this.render(current, threadSlotFor(current, settings), frame);
-            }));
+        async performRenderAll() {
+            // Serialize initial key updates. A companion launch can change all eight
+            // keys at once, and a single ordered stream is safer for the hardware than
+            // a burst of simultaneous image commands.
+            for (const current of [...this.actions].filter((action) => action.isKey())) {
+                try {
+                    const settings = await current.getSettings();
+                    await this.render(current, threadSlotFor(current, settings));
+                }
+                catch (error) {
+                    streamDeck.logger.error(`Failed to read settings for action ${current.id}`, error);
+                }
+            }
         }
-        async render(current, slot, frame) {
+        async render(current, slot) {
             const task = companionClient.tasks[slot];
             const appearance = task ? companionClient.appearanceFor(task) : undefined;
             const typography = task ? companionClient.typographyFor(task) : undefined;
-            const animatedFrame = appearance?.animation === "still" ? 0 : frame;
             const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-            const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}:${animatedFrame}`;
+            const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`;
             if (this.signatures.get(current.id) === signature)
                 return;
             try {
-                const image = threadKey(task, slot, companionClient.online, frame, showThreadTitle, appearance, typography);
+                // Keep status visuals static on the physical device. Continuous image
+                // writes can block the Stream Deck host's HID key-reading path.
+                const image = threadKey(task, slot, companionClient.online, 0, showThreadTitle, appearance, typography);
                 await current.setImage(image, { target: Target.HardwareAndSoftware });
                 if (this.titleSignatures.get(current.id) !== "") {
                     await current.setTitle("", { target: Target.HardwareAndSoftware });
@@ -9689,19 +9697,17 @@ async function refreshAllActions() {
     await companionClient.refresh();
     await threadSlotAction.renderAll();
 }
-async function animateThreadActions() {
-    animationFrame += 1;
-    await threadSlotAction.renderAll(animationFrame);
-}
 
 const REFRESH_INTERVAL_MS = 1500;
-const ANIMATION_INTERVAL_MS = 250;
+function scheduleRefresh(refresh, setIntervalFn = setInterval) {
+    void refresh();
+    return setIntervalFn(() => void refresh(), REFRESH_INTERVAL_MS);
+}
+
 streamDeck.logger.setLevel("info");
 streamDeck.actions.registerAction(threadSlotAction);
 streamDeck.connect();
-void refreshAllActions();
-setInterval(() => void refreshAllActions(), REFRESH_INTERVAL_MS);
-setInterval(() => void animateThreadActions(), ANIMATION_INTERVAL_MS);
+scheduleRefresh(refreshAllActions);
 setTimeout(() => {
     streamDeck.logger.info("Deck Threads ready", {
         companionOnline: companionClient.online,

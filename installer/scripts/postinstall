@@ -96,8 +96,10 @@ if [[ -d "$plugin_source" ]]; then
   fi
 
   if [[ "$plugin_changed" == "1" && "${DECK_THREADS_SKIP_LAUNCH:-0}" != "1" && -d "/Applications/Elgato Stream Deck.app" ]]; then
-    /usr/bin/pkill -x "Stream Deck" >/dev/null 2>&1 || true
-    /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" /usr/bin/open -a "/Applications/Elgato Stream Deck.app" || true
+    # Reload only Deck Threads. Restarting the full Stream Deck host detaches
+    # the physical device and leaves every key unresponsive.
+    /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+      /usr/bin/open "streamdeck://plugins/restart/com.roie.deck-threads" || true
   fi
 fi
 

@@ -6,6 +6,7 @@ const {
   comparePluginVersions,
   installBundledStreamDeckPlugin,
   parsePluginVersion,
+  reloadStreamDeckPlugin,
 } = require("../electron/stream-deck-plugin-install.cjs");
 const { assertPluginVersionChange } = require("./verify-plugin-version.cjs");
 
@@ -20,6 +21,10 @@ async function main() {
   const source = path.join(root, "source", "com.roie.deck-threads.sdPlugin");
   const destination = path.join(root, "plugins", "com.roie.deck-threads.sdPlugin");
   try {
+    const mainSource = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
+    assert.equal(mainSource.includes('execFileAsync("/usr/bin/pkill", ["-x", "Stream Deck"])'), false);
+    assert.equal(mainSource.includes("reloadStreamDeckPlugin(execFileAsync)"), true);
+
     assert.deepEqual(parsePluginVersion("1.2.3.4"), [1, 2, 3, 4]);
     assert.equal(parsePluginVersion("1.2.3-beta.1"), null);
     assert.equal(comparePluginVersions("1.0.1.0", "1.0.0.9"), 1);
@@ -43,6 +48,16 @@ async function main() {
       previousVersion: "1.0.1.0",
       reference: "v1.0.1",
     }), /cannot decrease/);
+
+    const reloadCalls = [];
+    await reloadStreamDeckPlugin(async (...args) => {
+      reloadCalls.push(args);
+    });
+    assert.deepEqual(reloadCalls, [[
+      "/usr/bin/open",
+      ["streamdeck://plugins/restart/com.roie.deck-threads"],
+      { timeout: 3000 },
+    ]]);
 
     writePlugin(source, "1.0.1.0", "current");
 

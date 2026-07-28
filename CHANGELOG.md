@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.0.2-beta.2 — 2026-07-28
+
+- Stopped both the installer and companion launch from killing the entire Stream Deck host when synchronizing the bundled plugin; Deck Threads now reloads only its own plugin.
+- Removed continuous hardware animation writes and serialized state-driven key updates so task rendering cannot block device input.
+
 ## 1.0.2-beta.1 — 2026-07-28
 
 - Prevented animated task keys from flooding the Stream Deck render queue and freezing the device when the Deck Threads page opens.
