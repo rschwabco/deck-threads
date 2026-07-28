@@ -13,6 +13,12 @@ current_user="$(/usr/bin/id -un)"
 
 /bin/mkdir -p "$test_home"
 
+if /usr/bin/grep -Fq '/usr/bin/pkill -x "Stream Deck"' "$project_root/installer/scripts/postinstall"; then
+  echo "Installer must not terminate the Stream Deck host." >&2
+  exit 1
+fi
+/usr/bin/grep -Fq 'streamdeck://plugins/restart/com.roie.deck-threads' "$project_root/installer/scripts/postinstall"
+
 write_plugin() {
   local root="$1"
   local version="$2"

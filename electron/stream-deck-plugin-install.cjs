@@ -26,6 +26,10 @@ function comparePluginVersions(left, right) {
   return 0;
 }
 
+async function reloadStreamDeckPlugin(execFileAsync, pluginUuid = "com.roie.deck-threads") {
+  await execFileAsync("/usr/bin/open", [`streamdeck://plugins/restart/${pluginUuid}`], { timeout: 3000 });
+}
+
 async function installBundledStreamDeckPlugin(source, destination, options = {}) {
   const fileSystem = options.fileSystem || fs;
   const installIfMissing = options.installIfMissing === true;
@@ -81,4 +85,5 @@ module.exports = {
   installBundledStreamDeckPlugin,
   parsePluginVersion,
   readPluginVersion,
+  reloadStreamDeckPlugin,
 };

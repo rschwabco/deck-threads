@@ -17,7 +17,10 @@ const {
   writeSourceAllocation,
 } = require("./source-allocation.cjs");
 const { assignStableTaskSlots, readTaskSlotIds, writeTaskSlotIds } = require("./task-slots.cjs");
-const { installBundledStreamDeckPlugin } = require("./stream-deck-plugin-install.cjs");
+const {
+  installBundledStreamDeckPlugin,
+  reloadStreamDeckPlugin,
+} = require("./stream-deck-plugin-install.cjs");
 
 const execFileAsync = promisify(execFile);
 const BRIDGE_HOST = "127.0.0.1";
@@ -80,8 +83,9 @@ async function ensureBundledStreamDeckPlugin() {
   if (["installed", "updated"].includes(result.status)
     && process.env.DECK_THREADS_SKIP_STREAM_DECK_RESTART !== "1"
     && fs.existsSync("/Applications/Elgato Stream Deck.app")) {
-    await execFileAsync("/usr/bin/pkill", ["-x", "Stream Deck"]).catch(() => undefined);
-    await execFileAsync("/usr/bin/open", ["-a", "/Applications/Elgato Stream Deck.app"]).catch(() => undefined);
+    // Reload only Deck Threads. Killing the Stream Deck host disconnects the
+    // physical device and freezes every key while the companion opens.
+    await reloadStreamDeckPlugin(execFileAsync).catch(() => undefined);
   }
 
   return result;
