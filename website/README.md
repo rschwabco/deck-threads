@@ -17,6 +17,8 @@ npm test
 ```
 
 The site has no database, authentication, user accounts, analytics, or runtime
-secrets. Its `/download/installer` and `/download/companion` routes resolve the
-newest complete published GitHub release, including prereleases, and redirect
-to the signed package assets.
+secrets. Its `/download/installer`, `/download/companion`, and
+`/download/plugin` routes resolve only the newest complete stable GitHub
+release and its matching standalone Stream Deck plugin.
+Explicit `/download/beta/installer`, `/download/beta/companion`, and
+`/download/beta/plugin` routes resolve the newest complete prerelease.

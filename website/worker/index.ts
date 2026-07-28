@@ -1,6 +1,13 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import {
+  PLUGIN_DOWNLOAD_ASSET,
+  RELEASE_DOWNLOAD_PREFIX,
+  selectCompleteRelease,
+  type GitHubRelease,
+  type ReleaseChannel,
+} from "./release-selection";
 
 interface Env {
   ASSETS: Fetcher;
@@ -19,22 +26,14 @@ interface ExecutionContext {
   passThroughOnException(): void;
 }
 
-interface GitHubReleaseAsset {
-  name: string;
-  browser_download_url: string;
-}
-
-interface GitHubRelease {
-  draft: boolean;
-  published_at: string | null;
-  assets: GitHubReleaseAsset[];
-}
-
 const RELEASES_API = "https://api.github.com/repos/rschwabco/deck-threads/releases?per_page=20";
-const RELEASE_DOWNLOAD_PREFIX = "https://github.com/rschwabco/deck-threads/releases/download/";
-const DOWNLOAD_ASSETS = {
-  "/download/installer": "Deck-Threads-Installer.pkg",
-  "/download/companion": "Deck-Threads-Companion.pkg",
+const DOWNLOAD_ROUTES = {
+  "/download/installer": { assetName: "Deck-Threads-Installer.pkg", channel: "stable" },
+  "/download/companion": { assetName: "Deck-Threads-Companion.pkg", channel: "stable" },
+  "/download/plugin": { assetName: PLUGIN_DOWNLOAD_ASSET, channel: "stable" },
+  "/download/beta/installer": { assetName: "Deck-Threads-Installer.pkg", channel: "beta" },
+  "/download/beta/companion": { assetName: "Deck-Threads-Companion.pkg", channel: "beta" },
+  "/download/beta/plugin": { assetName: PLUGIN_DOWNLOAD_ASSET, channel: "beta" },
 } as const;
 
 function errorResponse(message: string, status: number) {
@@ -48,7 +47,7 @@ function errorResponse(message: string, status: number) {
   });
 }
 
-async function latestReleaseAssets() {
+async function latestReleaseAssets(channel: ReleaseChannel) {
   const response = await fetch(RELEASES_API, {
     headers: {
       Accept: "application/vnd.github+json",
@@ -59,19 +58,13 @@ async function latestReleaseAssets() {
 
   if (!response.ok) throw new Error(`GitHub Releases returned ${response.status}`);
   const releases = await response.json() as GitHubRelease[];
-  const completeRelease = releases
-    .filter((release) => !release.draft && release.published_at)
-    .sort((left, right) => Date.parse(right.published_at!) - Date.parse(left.published_at!))
-    .find((release) => {
-      const names = new Set(release.assets.map((asset) => asset.name));
-      return Object.values(DOWNLOAD_ASSETS).every((name) => names.has(name));
-    });
+  const completeRelease = selectCompleteRelease(releases, channel);
 
-  if (!completeRelease) throw new Error("No complete published Deck Threads release was found");
+  if (!completeRelease) throw new Error(`No complete published Deck Threads ${channel} release was found`);
   return new Map(completeRelease.assets.map((asset) => [asset.name, asset.browser_download_url]));
 }
 
-async function handleDownload(request: Request, assetName: string, ctx: ExecutionContext) {
+async function handleDownload(request: Request, assetName: string, channel: ReleaseChannel, ctx: ExecutionContext) {
   if (request.method !== "GET" && request.method !== "HEAD") {
     return new Response(null, { status: 405, headers: { Allow: "GET, HEAD" } });
   }
@@ -92,7 +85,7 @@ async function handleDownload(request: Request, assetName: string, ctx: Executio
   if (cached) return cached;
 
   try {
-    const assets = await latestReleaseAssets();
+    const assets = await latestReleaseAssets(channel);
     const downloadUrl = assets.get(assetName);
     if (!downloadUrl || !downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
       return errorResponse("The latest Deck Threads download is temporarily unavailable.", 503);
@@ -125,8 +118,8 @@ const worker = {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    const downloadAsset = DOWNLOAD_ASSETS[url.pathname as keyof typeof DOWNLOAD_ASSETS];
-    if (downloadAsset) return handleDownload(request, downloadAsset, ctx);
+    const downloadRoute = DOWNLOAD_ROUTES[url.pathname as keyof typeof DOWNLOAD_ROUTES];
+    if (downloadRoute) return handleDownload(request, downloadRoute.assetName, downloadRoute.channel, ctx);
 
     if (url.pathname === "/_vinext/image") {
       const allowedWidths = [...DEFAULT_DEVICE_SIZES, ...DEFAULT_IMAGE_SIZES];

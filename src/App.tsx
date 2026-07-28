@@ -67,7 +67,18 @@ const EMPTY_SNAPSHOT: SystemSnapshot = {
   tasks: [],
   codex: { state: "missing", processCount: 0, detail: "Looking for Codex Desktop.", source: "Scanning", taskCount: 0 },
   claude: { state: "missing", processCount: 0, detail: "Looking for Claude sessions.", source: "Scanning", taskCount: 0 },
-  streamDeck: { state: "missing", processCount: 0, pluginConnected: false, detail: "Looking for Stream Deck." },
+  streamDeck: {
+    state: "missing",
+    processCount: 0,
+    pluginConnected: false,
+    pluginInstalled: false,
+    pluginVersion: null,
+    bundledPluginVersion: null,
+    pluginUpdateAvailable: false,
+    pluginInstallable: false,
+    pluginRepairPending: false,
+    detail: "Looking for Stream Deck.",
+  },
   companion: { state: "connected", detail: "Starting the local task service." },
   displaySettings: {
     showThreadTitle: {
@@ -132,11 +143,13 @@ function HealthItem({
   label,
   state,
   detail,
+  action,
 }: {
   icon: React.ReactNode;
   label: string;
   state: HealthState;
   detail: string;
+  action?: React.ReactNode;
 }) {
   return (
     <article className="health-item">
@@ -151,6 +164,7 @@ function HealthItem({
         </div>
         <p title={detail}>{detail}</p>
       </div>
+      {action}
     </article>
   );
 }
@@ -238,6 +252,8 @@ export function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionResult, setActionResult] = useState<{ ok: boolean; message: string }>();
+  const [pluginActionResult, setPluginActionResult] = useState<{ ok: boolean; message: string }>();
+  const [pluginActionPending, setPluginActionPending] = useState(false);
   const [updateActionPending, setUpdateActionPending] = useState(false);
   const [updateState, setUpdateState] = useState<UpdateState>({
     status: "disabled",
@@ -301,6 +317,15 @@ export function App() {
   }), [snapshot.tasks]);
   const selectedTypography = snapshot.displaySettings.typography[appearanceSource];
   const selectedPreviewAppearance = snapshot.displaySettings.statusAppearance[appearanceSource].working;
+  const pluginActionLabel = !snapshot.streamDeck.pluginInstalled
+    ? "Install plugin"
+    : snapshot.streamDeck.pluginUpdateAvailable
+      ? "Update plugin"
+      : "Restart plugin";
+  const showPluginAction = snapshot.streamDeck.pluginInstallable
+    && (!snapshot.streamDeck.pluginInstalled
+      || snapshot.streamDeck.pluginUpdateAvailable
+      || (snapshot.streamDeck.processCount > 0 && !snapshot.streamDeck.pluginConnected));
 
   const updateTitleVisibility = async (status: LabelConfigurableStatus, visible: boolean) => {
     const nextSettings = {
@@ -421,6 +446,23 @@ export function App() {
     }
   };
 
+  const handlePluginAction = async () => {
+    setPluginActionPending(true);
+    setPluginActionResult(undefined);
+    try {
+      const result = await window.bridgeApi.installStreamDeckPlugin();
+      setPluginActionResult(result);
+      await loadSnapshot();
+    } catch (error) {
+      setPluginActionResult({
+        ok: false,
+        message: error instanceof Error ? error.message : "The Stream Deck plugin could not be installed.",
+      });
+    } finally {
+      setPluginActionPending(false);
+    }
+  };
+
   const updateSourceAllocation = async (nextSettings: SourceAllocationSettings) => {
     setSnapshot((current) => ({ ...current, allocationSettings: nextSettings }));
     try {
@@ -477,8 +519,14 @@ export function App() {
           )}
           <div className="sidebar-note">
             <p>Deck sync</p>
-            <strong>{snapshot.streamDeck.pluginConnected ? "Plugin connected" : "Waiting for plugin"}</strong>
-            <span>Keep this companion running to update keys and open tasks.</span>
+            <strong>{snapshot.streamDeck.pluginConnected
+              ? "Plugin connected"
+              : snapshot.streamDeck.pluginInstalled
+                ? "Plugin installed"
+                : "Plugin not installed"}</strong>
+            <span>{snapshot.streamDeck.pluginInstalled
+              ? `Version ${snapshot.streamDeck.pluginVersion || "detected"}. Keep this companion running to update keys.`
+              : "Open Connections to install the bundled Stream Deck plugin."}</span>
           </div>
         </div>
       </aside>
@@ -656,10 +704,22 @@ export function App() {
               <div className="health-list">
                 <HealthItem icon={<Command />} label="Codex Desktop" state={snapshot.codex.state} detail={snapshot.codex.detail} />
                 <HealthItem icon={<TerminalWindow />} label="Claude" state={snapshot.claude.state} detail={snapshot.claude.detail} />
-                <HealthItem icon={<Monitor />} label="Stream Deck" state={snapshot.streamDeck.state} detail={snapshot.streamDeck.detail} />
+                <HealthItem
+                  icon={<Monitor />}
+                  label="Stream Deck"
+                  state={snapshot.streamDeck.state}
+                  detail={snapshot.streamDeck.detail}
+                  action={showPluginAction ? (
+                    <button className="button button-secondary health-action" onClick={handlePluginAction} disabled={pluginActionPending}>
+                      {pluginActionPending ? <CircleNotch className="spin" /> : <DownloadSimple />}
+                      {pluginActionPending ? "Working..." : pluginActionLabel}
+                    </button>
+                  ) : undefined}
+                />
                 <HealthItem icon={<Plug />} label="Local companion" state={snapshot.companion.state} detail={snapshot.companion.detail} />
               </div>
             )}
+            <ActionResult result={pluginActionResult} />
           </section>
         </>}
 

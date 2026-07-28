@@ -3,6 +3,7 @@ import VisualParallax from "./visual-parallax";
 
 const INSTALLER_DOWNLOAD = "/download/installer";
 const COMPANION_DOWNLOAD = "/download/companion";
+const PLUGIN_DOWNLOAD = "/download/plugin";
 
 const footerKeys = ["DT1", "MP1", "QA2", "?", "NX1", "DT2", "AS1", "MP2"];
 
@@ -67,6 +68,7 @@ export default function Home() {
           <div className="hero-actions">
             <a className="button button-light" href={INSTALLER_DOWNLOAD}>Download app + plugin (.pkg) <span aria-hidden="true">↓</span></a>
             <a className="button button-ghost" href={COMPANION_DOWNLOAD}>Companion app only (.pkg)</a>
+            <a className="button button-ghost" href={PLUGIN_DOWNLOAD}>Stream Deck plugin only</a>
           </div>
           <p className="requirements">Universal macOS · Developer ID signed · Apple notarized</p>
         </div>

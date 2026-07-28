@@ -60,6 +60,12 @@ export interface SystemSnapshot {
     state: HealthState;
     processCount: number;
     pluginConnected: boolean;
+    pluginInstalled: boolean;
+    pluginVersion: string | null;
+    bundledPluginVersion: string | null;
+    pluginUpdateAvailable: boolean;
+    pluginInstallable: boolean;
+    pluginRepairPending: boolean;
     detail: string;
   };
   companion: {
@@ -109,6 +115,7 @@ export interface UpdateState {
 export interface BridgeApi {
   getSnapshot(): Promise<SystemSnapshot>;
   refresh(): Promise<SystemSnapshot>;
+  installStreamDeckPlugin(): Promise<{ ok: boolean; status: string; version?: string; message: string }>;
   setDisplaySettings(value: DisplaySettings): Promise<DisplaySettings>;
   setSourceAllocation(value: SourceAllocationSettings): Promise<SourceAllocationSettings>;
   openTask(sourceId: TaskSourceId, threadId: string, title: string, openId?: string): Promise<{ ok: boolean; message: string; deepLink?: string }>;

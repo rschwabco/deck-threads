@@ -3,10 +3,16 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const {
+  clearPluginRepairRequest,
   comparePluginVersions,
+  hasPluginRepairRequest,
+  inspectStreamDeckPlugin,
   installBundledStreamDeckPlugin,
   parsePluginVersion,
+  readPluginInstallPolicy,
   reloadStreamDeckPlugin,
+  requestPluginRepair,
+  shouldInstallMissingStreamDeckPlugin,
 } = require("../electron/stream-deck-plugin-install.cjs");
 const { assertPluginVersionChange } = require("./verify-plugin-version.cjs");
 
@@ -24,6 +30,8 @@ async function main() {
     const mainSource = fs.readFileSync(path.join(__dirname, "..", "electron", "main.cjs"), "utf8");
     assert.equal(mainSource.includes('execFileAsync("/usr/bin/pkill", ["-x", "Stream Deck"])'), false);
     assert.equal(mainSource.includes("reloadStreamDeckPlugin(execFileAsync)"), true);
+    assert.equal(mainSource.includes("requestPluginRepair(pluginRepairRequestPath(), app.getVersion())"), true);
+    assert.equal(mainSource.includes("shouldInstallMissingPluginAtStartup()"), true);
 
     assert.deepEqual(parsePluginVersion("1.2.3.4"), [1, 2, 3, 4]);
     assert.equal(parsePluginVersion("1.2.3-beta.1"), null);
@@ -61,6 +69,14 @@ async function main() {
 
     writePlugin(source, "1.0.1.0", "current");
 
+    assert.deepEqual(inspectStreamDeckPlugin(source, destination), {
+      bundledAvailable: true,
+      bundledVersion: "1.0.1.0",
+      installed: false,
+      installedVersion: null,
+      updateAvailable: false,
+    });
+
     const optedOut = await installBundledStreamDeckPlugin(source, destination);
     assert.equal(optedOut.status, "not-installed");
     assert.equal(fs.existsSync(destination), false);
@@ -69,10 +85,19 @@ async function main() {
     assert.equal(installed.status, "installed");
     assert.equal(fs.readFileSync(path.join(destination, "plugin.js"), "utf8"), "current");
 
+    assert.deepEqual(inspectStreamDeckPlugin(source, destination), {
+      bundledAvailable: true,
+      bundledVersion: "1.0.1.0",
+      installed: true,
+      installedVersion: "1.0.1.0",
+      updateAvailable: false,
+    });
+
     const unchanged = await installBundledStreamDeckPlugin(source, destination);
     assert.equal(unchanged.status, "up-to-date");
 
     writePlugin(source, "1.0.1.1", "updated");
+    assert.equal(inspectStreamDeckPlugin(source, destination).updateAvailable, true);
     const updated = await installBundledStreamDeckPlugin(source, destination);
     assert.equal(updated.status, "updated");
     assert.equal(updated.version, "1.0.1.1");
@@ -110,6 +135,27 @@ async function main() {
 
     const missing = await installBundledStreamDeckPlugin(path.join(root, "missing"), destination);
     assert.equal(missing.status, "not-bundled");
+
+    const repairMarker = path.join(root, "state", "install-plugin-after-update.json");
+    assert.equal(hasPluginRepairRequest(repairMarker), false);
+    requestPluginRepair(repairMarker, "1.0.2-beta.2");
+    assert.equal(hasPluginRepairRequest(repairMarker), true);
+    assert.equal(JSON.parse(fs.readFileSync(repairMarker, "utf8")).requestedByVersion, "1.0.2-beta.2");
+    clearPluginRepairRequest(repairMarker);
+    assert.equal(hasPluginRepairRequest(repairMarker), false);
+
+    const policyPath = path.join(root, "state", "plugin-install-policy.json");
+    assert.equal(readPluginInstallPolicy(policyPath), null);
+    fs.writeFileSync(policyPath, JSON.stringify({ policy: "companion-only" }));
+    assert.equal(readPluginInstallPolicy(policyPath), "companion-only");
+    fs.writeFileSync(policyPath, JSON.stringify({ policy: "complete" }));
+    assert.equal(readPluginInstallPolicy(policyPath), "complete");
+    fs.writeFileSync(policyPath, JSON.stringify({ policy: "unexpected" }));
+    assert.equal(readPluginInstallPolicy(policyPath), null);
+    assert.equal(shouldInstallMissingStreamDeckPlugin({ packaged: true }), true);
+    assert.equal(shouldInstallMissingStreamDeckPlugin({ packaged: true, installPolicy: "companion-only" }), false);
+    assert.equal(shouldInstallMissingStreamDeckPlugin({ packaged: true, installPolicy: "complete" }), true);
+    assert.equal(shouldInstallMissingStreamDeckPlugin({ packaged: false, repairPending: true }), true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
