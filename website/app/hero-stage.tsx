@@ -1,5 +1,6 @@
 const INSTALLER_DOWNLOAD = "/download/installer";
 const COMPANION_DOWNLOAD = "/download/companion";
+const PLUGIN_DOWNLOAD = "/download/plugin";
 
 const keys = [
   { label: "DT1", title: "Deck Threads site", state: "working" },
@@ -27,6 +28,9 @@ export default function HeroStage() {
           </a>
           <a className="button button-secondary" href={COMPANION_DOWNLOAD}>
             Companion app only (.pkg)
+          </a>
+          <a className="button button-secondary" href={PLUGIN_DOWNLOAD}>
+            Stream Deck plugin only
           </a>
         </div>
         <p className="requirements">Universal macOS · Developer ID signed · Apple notarized</p>

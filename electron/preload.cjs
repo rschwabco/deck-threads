@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("bridgeApi", {
   getSnapshot: () => ipcRenderer.invoke("bridge:get-snapshot"),
   refresh: () => ipcRenderer.invoke("bridge:refresh"),
+  installStreamDeckPlugin: () => ipcRenderer.invoke("bridge:install-stream-deck-plugin"),
   setDisplaySettings: (value) => ipcRenderer.invoke("bridge:set-display-settings", value),
   setSourceAllocation: (value) => ipcRenderer.invoke("bridge:set-source-allocation", value),
   openTask: (sourceId, threadId, title, openId) => ipcRenderer.invoke("bridge:open-task", sourceId, threadId, title, openId),

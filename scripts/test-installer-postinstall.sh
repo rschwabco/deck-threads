@@ -9,6 +9,7 @@ install_root="$test_root/install-root"
 test_home="$test_root/home"
 source_plugin="$install_root/Library/Application Support/Deck Threads/Installer/com.roie.deck-threads.sdPlugin"
 destination_plugin="$test_home/Library/Application Support/com.elgato.StreamDeck/Plugins/com.roie.deck-threads.sdPlugin"
+install_policy="$test_home/Library/Application Support/Deck Threads/plugin-install-policy.json"
 current_user="$(/usr/bin/id -un)"
 
 /bin/mkdir -p "$test_home"
@@ -40,10 +41,12 @@ run_postinstall() {
 # must not create a Stream Deck plugin from the copy bundled inside the app.
 run_postinstall
 [[ ! -e "$destination_plugin" ]]
+/usr/bin/grep -Fqx '{"policy":"companion-only"}' "$install_policy"
 
 write_plugin "$source_plugin" "1.0.1.0" "bundled"
 run_postinstall
 [[ "$(<"$destination_plugin/marker.txt")" == "bundled" ]]
+/usr/bin/grep -Fqx '{"policy":"complete"}' "$install_policy"
 
 printf 'preserve\n' > "$destination_plugin/equal-install.txt"
 run_postinstall

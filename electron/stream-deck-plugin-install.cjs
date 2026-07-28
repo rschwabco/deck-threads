@@ -26,6 +26,56 @@ function comparePluginVersions(left, right) {
   return 0;
 }
 
+function inspectStreamDeckPlugin(source, destination, options = {}) {
+  const fileSystem = options.fileSystem || fs;
+  const bundledAvailable = Boolean(source && fileSystem.existsSync(source));
+  const installed = Boolean(destination && fileSystem.existsSync(destination));
+  const bundledVersion = bundledAvailable ? readPluginVersion(source, fileSystem) : null;
+  const installedVersion = installed ? readPluginVersion(destination, fileSystem) : null;
+  const comparison = comparePluginVersions(bundledVersion, installedVersion);
+  return {
+    bundledAvailable,
+    bundledVersion,
+    installed,
+    installedVersion,
+    updateAvailable: comparison === 1,
+  };
+}
+
+function hasPluginRepairRequest(markerPath, fileSystem = fs) {
+  return Boolean(markerPath && fileSystem.existsSync(markerPath));
+}
+
+function requestPluginRepair(markerPath, version, fileSystem = fs) {
+  fileSystem.mkdirSync(path.dirname(markerPath), { recursive: true });
+  fileSystem.writeFileSync(markerPath, JSON.stringify({
+    requestedAt: new Date().toISOString(),
+    requestedByVersion: version || null,
+  }));
+}
+
+function clearPluginRepairRequest(markerPath, fileSystem = fs) {
+  if (!markerPath) return;
+  fileSystem.rmSync(markerPath, { force: true });
+}
+
+function readPluginInstallPolicy(policyPath, fileSystem = fs) {
+  try {
+    const value = JSON.parse(fileSystem.readFileSync(policyPath, "utf8"));
+    return value?.policy === "complete" || value?.policy === "companion-only"
+      ? value.policy
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function shouldInstallMissingStreamDeckPlugin({ repairPending = false, installPolicy = null, packaged = false } = {}) {
+  if (repairPending || installPolicy === "complete") return true;
+  if (installPolicy === "companion-only") return false;
+  return Boolean(packaged);
+}
+
 async function reloadStreamDeckPlugin(execFileAsync, pluginUuid = "com.roie.deck-threads") {
   await execFileAsync("/usr/bin/open", [`streamdeck://plugins/restart/${pluginUuid}`], { timeout: 3000 });
 }
@@ -81,9 +131,15 @@ async function installBundledStreamDeckPlugin(source, destination, options = {})
 }
 
 module.exports = {
+  clearPluginRepairRequest,
   comparePluginVersions,
+  hasPluginRepairRequest,
+  inspectStreamDeckPlugin,
   installBundledStreamDeckPlugin,
   parsePluginVersion,
+  readPluginInstallPolicy,
   readPluginVersion,
   reloadStreamDeckPlugin,
+  requestPluginRepair,
+  shouldInstallMissingStreamDeckPlugin,
 };

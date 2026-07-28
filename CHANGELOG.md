@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.0.2 — 2026-07-28
+
+- Detects whether the Deck Threads Stream Deck plugin is installed, shows the installed and bundled versions, and offers Install, Update, or Restart directly from the companion app.
+- Repairs a missing plugin automatically during a complete-install app update while preserving the companion-only install choice.
+- Adds a standalone Stream Deck plugin download and keeps stable and beta website download channels separate.
+- Includes the Stream Deck host stability fixes from the 1.0.2 beta releases.
+
 ## 1.0.2-beta.2 — 2026-07-28
 
 - Stopped both the installer and companion launch from killing the entire Stream Deck host when synchronizing the bundled plugin; Deck Threads now reloads only its own plugin.

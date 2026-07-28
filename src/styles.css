@@ -427,7 +427,7 @@ h3 { font-size: 13px; font-weight: 650; }
 .health-list { gap: 2px; }
 .health-item {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr) auto;
   gap: 12px;
   min-height: 76px;
   align-items: center;
@@ -440,6 +440,7 @@ h3 { font-size: 13px; font-weight: 650; }
 .health-copy { min-width: 0; }
 .health-heading { justify-content: space-between; gap: 10px; }
 .health-item p { display: -webkit-box; margin-top: 6px; overflow: hidden; color: var(--quiet); font-size: 10px; line-height: 1.45; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.health-action { min-width: 126px; }
 .state-badge { display: inline-flex; align-items: center; gap: 5px; color: var(--quiet); font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 9px; text-transform: uppercase; }
 .state-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .state-connected { color: var(--success); }

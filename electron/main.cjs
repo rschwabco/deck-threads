@@ -18,8 +18,14 @@ const {
 } = require("./source-allocation.cjs");
 const { assignStableTaskSlots, readTaskSlotIds, writeTaskSlotIds } = require("./task-slots.cjs");
 const {
+  clearPluginRepairRequest,
+  hasPluginRepairRequest,
+  inspectStreamDeckPlugin,
   installBundledStreamDeckPlugin,
+  readPluginInstallPolicy,
   reloadStreamDeckPlugin,
+  requestPluginRepair,
+  shouldInstallMissingStreamDeckPlugin,
 } = require("./stream-deck-plugin-install.cjs");
 
 const execFileAsync = promisify(execFile);
@@ -69,18 +75,65 @@ function getResourcePath(filename) {
     : path.join(__dirname, "..", "build", filename);
 }
 
-async function ensureBundledStreamDeckPlugin() {
-  if (process.platform !== "darwin" || !app.isPackaged) {
-    return { status: "development" };
+function bundledStreamDeckPluginPath() {
+  if (process.env.DECK_THREADS_BUNDLED_PLUGIN_DIR) {
+    return process.env.DECK_THREADS_BUNDLED_PLUGIN_DIR;
   }
+  return app.isPackaged
+    ? path.join(process.resourcesPath, "stream-deck-plugin", STREAM_DECK_PLUGIN_BUNDLE)
+    : null;
+}
 
-  const source = path.join(process.resourcesPath, "stream-deck-plugin", STREAM_DECK_PLUGIN_BUNDLE);
+function installedStreamDeckPluginPath() {
   const pluginsRoot = process.env.DECK_THREADS_STREAM_DECK_PLUGINS_DIR
     || path.join(app.getPath("home"), "Library", "Application Support", "com.elgato.StreamDeck", "Plugins");
-  const destination = path.join(pluginsRoot, STREAM_DECK_PLUGIN_BUNDLE);
-  const result = await installBundledStreamDeckPlugin(source, destination, { installIfMissing: false });
+  return path.join(pluginsRoot, STREAM_DECK_PLUGIN_BUNDLE);
+}
 
-  if (["installed", "updated"].includes(result.status)
+function pluginRepairRequestPath() {
+  return path.join(app.getPath("userData"), "install-stream-deck-plugin-after-update.json");
+}
+
+function pluginInstallPolicyPath() {
+  return path.join(app.getPath("userData"), "plugin-install-policy.json");
+}
+
+function shouldInstallMissingPluginAtStartup() {
+  const policy = readPluginInstallPolicy(pluginInstallPolicyPath());
+  // Installers released before this policy file existed cannot distinguish a
+  // legacy full install from a companion updated in place. Repair both once;
+  // new companion-only installs write an explicit opt-out before first launch.
+  return shouldInstallMissingStreamDeckPlugin({
+    repairPending: hasPluginRepairRequest(pluginRepairRequestPath()),
+    installPolicy: policy,
+    packaged: app.isPackaged,
+  });
+}
+
+function currentStreamDeckPluginStatus() {
+  const source = bundledStreamDeckPluginPath();
+  const destination = installedStreamDeckPluginPath();
+  return {
+    ...inspectStreamDeckPlugin(source, destination),
+    destination,
+    installable: process.platform === "darwin" && Boolean(source),
+    repairPending: hasPluginRepairRequest(pluginRepairRequestPath()),
+  };
+}
+
+async function ensureBundledStreamDeckPlugin({ installIfMissing = false, reloadIfUnchanged = false } = {}) {
+  if (process.platform !== "darwin") return { status: "unsupported", version: null };
+
+  const source = bundledStreamDeckPluginPath();
+  const destination = installedStreamDeckPluginPath();
+  const repairPending = hasPluginRepairRequest(pluginRepairRequestPath());
+  const result = await installBundledStreamDeckPlugin(source, destination, {
+    installIfMissing: installIfMissing || repairPending,
+  });
+
+  const changed = ["installed", "updated"].includes(result.status);
+  const alreadyInstalled = ["up-to-date", "newer-installed"].includes(result.status);
+  if ((changed || (reloadIfUnchanged && alreadyInstalled))
     && process.env.DECK_THREADS_SKIP_STREAM_DECK_RESTART !== "1"
     && fs.existsSync("/Applications/Elgato Stream Deck.app")) {
     // Reload only Deck Threads. Killing the Stream Deck host disconnects the
@@ -88,7 +141,24 @@ async function ensureBundledStreamDeckPlugin() {
     await reloadStreamDeckPlugin(execFileAsync).catch(() => undefined);
   }
 
+  if (currentStreamDeckPluginStatus().installed) {
+    clearPluginRepairRequest(pluginRepairRequestPath());
+  }
+
   return result;
+}
+
+async function prepareForUpdateInstall() {
+  requestPluginRepair(pluginRepairRequestPath(), app.getVersion());
+  try {
+    await ensureBundledStreamDeckPlugin({ installIfMissing: true });
+  } catch (error) {
+    emitEvent("system", "warning", "Stream Deck plugin repair will retry after update", error.message);
+  }
+  // Keep the request until the newly installed app verifies its own bundled
+  // plugin. The pre-update repair may only have installed the previous bundle.
+  requestPluginRepair(pluginRepairRequestPath(), app.getVersion());
+  shutdownAppServices();
 }
 
 function getLaunchAtLoginStatus() {
@@ -341,7 +411,7 @@ function initializeUpdateController() {
     app,
     updater,
     enabled,
-    beforeInstall: shutdownAppServices,
+    beforeInstall: prepareForUpdateInstall,
     onStateChange: publishUpdateState,
     onActivity: ({ level, message, detail }) => emitEvent("system", level, message, detail),
   });
@@ -382,11 +452,20 @@ function startBridgeServer() {
       const url = new URL(request.url || "/", `http://${BRIDGE_HOST}:${BRIDGE_PORT}`);
 
       if (request.method === "GET" && url.pathname === "/v1/health") {
+        const plugin = currentStreamDeckPluginStatus();
         sendJson(response, 200, {
           ok: true,
           service: "deck-threads",
           version: app.getVersion(),
           launchAtLogin: getLaunchAtLoginStatus(),
+          streamDeckPlugin: {
+            installed: plugin.installed,
+            installedVersion: plugin.installedVersion,
+            bundledVersion: plugin.bundledVersion,
+            updateAvailable: plugin.updateAvailable,
+            installable: plugin.installable,
+            repairPending: plugin.repairPending,
+          },
           windowVisible: Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()),
         });
         return;
@@ -508,16 +587,35 @@ function trackTaskStateChanges(tasks) {
   previousTaskStates = next;
 }
 
-function inspectStreamDeck(processLines) {
+function inspectStreamDeck(processLines, plugin) {
   const processes = processLines.filter((line) => /\/Applications\/Elgato Stream Deck\.app\//.test(line));
-  const pluginLine = processLines.find((line) => /com\.roie\.deck-threads\.sdPlugin\/bin\/plugin\.js/.test(line));
+  const pluginExecutable = path.join(plugin.destination, "bin", "plugin.js");
+  const pluginLine = processLines.find((line) => line.includes(pluginExecutable));
+  const pluginConnected = Boolean(pluginLine);
+  const versionLabel = plugin.installedVersion ? ` ${plugin.installedVersion}` : "";
+  let detail;
+  if (!plugin.installed) {
+    detail = plugin.installable
+      ? "The Deck Threads plugin is not installed. Install it here, then Stream Deck will load it."
+      : "The Deck Threads plugin is not installed. Download it from the Deck Threads website.";
+  } else if (pluginConnected) {
+    detail = `Plugin${versionLabel} is installed and connected.`;
+  } else if (processes.length) {
+    detail = `Plugin${versionLabel} is installed but not connected. Restart it here to load it in Stream Deck.`;
+  } else {
+    detail = `Plugin${versionLabel} is installed. Open Stream Deck to connect it.`;
+  }
   return {
-    state: processes.length ? "connected" : "missing",
+    state: pluginConnected ? "connected" : plugin.installed ? "detected" : "missing",
     processCount: processes.length,
-    pluginConnected: Boolean(pluginLine),
-    detail: processes.length
-      ? `Stream Deck is running${pluginLine ? " and the Deck Threads plugin is connected." : ". Install or restart the plugin to connect it."}`
-      : "Open Stream Deck to display your live Codex and Claude tasks.",
+    pluginConnected,
+    pluginInstalled: plugin.installed,
+    pluginVersion: plugin.installedVersion,
+    bundledPluginVersion: plugin.bundledVersion,
+    pluginUpdateAvailable: plugin.updateAvailable,
+    pluginInstallable: plugin.installable,
+    pluginRepairPending: plugin.repairPending,
+    detail,
   };
 }
 
@@ -529,9 +627,21 @@ async function getSnapshot() {
   const processLines = processResult.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
   const codex = inspectCodex(processLines, taskState.sources.codex);
   const claude = inspectClaude(processLines, taskState.sources.claude);
+  const plugin = currentStreamDeckPluginStatus();
   const streamDeck = processResult.error
-    ? { state: "error", processCount: 0, pluginConnected: false, detail: processResult.error.message }
-    : inspectStreamDeck(processLines);
+    ? {
+        state: "error",
+        processCount: 0,
+        pluginConnected: false,
+        pluginInstalled: plugin.installed,
+        pluginVersion: plugin.installedVersion,
+        bundledPluginVersion: plugin.bundledVersion,
+        pluginUpdateAvailable: plugin.updateAvailable,
+        pluginInstallable: plugin.installable,
+        pluginRepairPending: plugin.repairPending,
+        detail: processResult.error.message,
+      }
+    : inspectStreamDeck(processLines, plugin);
   trackTaskStateChanges(taskState.tasks);
   return {
     scannedAt: new Date().toISOString(),
@@ -549,6 +659,25 @@ async function getSnapshot() {
 }
 
 ipcMain.handle("bridge:get-snapshot", getSnapshot);
+ipcMain.handle("bridge:install-stream-deck-plugin", async () => {
+  try {
+    const result = await ensureBundledStreamDeckPlugin({ installIfMissing: true, reloadIfUnchanged: true });
+    if (["not-bundled", "invalid-bundled-version", "unsupported"].includes(result.status)) {
+      return { ok: false, status: result.status, message: "This copy of Deck Threads does not contain an installable Stream Deck plugin." };
+    }
+    const verb = result.status === "installed"
+      ? "installed"
+      : result.status === "updated"
+        ? "updated"
+        : "restarted";
+    const message = `Stream Deck plugin ${verb}${result.version ? ` (version ${result.version})` : ""}.`;
+    emitEvent("streamdeck", "success", message, "Deck Threads is ready in Stream Deck.");
+    return { ok: true, status: result.status, version: result.version, message };
+  } catch (error) {
+    emitEvent("streamdeck", "error", "Could not install the Stream Deck plugin", error.message);
+    return { ok: false, status: "error", message: error.message };
+  }
+});
 ipcMain.handle("updates:get-state", () => currentUpdateState());
 ipcMain.handle("updates:check", () => updateController?.checkForUpdates({ manual: true }) || currentUpdateState());
 ipcMain.handle("updates:start", () => updateController?.startUpdate() || currentUpdateState());
@@ -610,7 +739,7 @@ app.whenReady().then(() => {
   if (openedAtLogin) app.dock?.hide();
   else showMainWindow();
   if (process.env.CODEX_BRIDGE_API_DISABLED !== "1") startBridgeServer();
-  ensureBundledStreamDeckPlugin()
+  ensureBundledStreamDeckPlugin({ installIfMissing: shouldInstallMissingPluginAtStartup() })
     .then((result) => {
       if (["installed", "updated"].includes(result.status)) {
         emitEvent("system", "success", "Stream Deck plugin updated", `Version ${result.version || "current"} is ready.`);

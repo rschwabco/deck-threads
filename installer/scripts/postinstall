@@ -18,6 +18,18 @@ if [[ -z "$user_home" || ! -d "$user_home" ]]; then
   exit 1
 fi
 
+policy_root="$user_home/Library/Application Support/Deck Threads"
+policy_file="$policy_root/plugin-install-policy.json"
+policy_staging="$policy_root/.plugin-install-policy.installing.$$"
+install_policy="companion-only"
+if [[ -d "$plugin_source" ]]; then
+  install_policy="complete"
+fi
+/bin/mkdir -p "$policy_root"
+/usr/bin/printf '{"policy":"%s"}\n' "$install_policy" > "$policy_staging"
+/usr/sbin/chown "$console_user:$console_group" "$policy_staging"
+/bin/mv -f "$policy_staging" "$policy_file"
+
 read_plugin_version() {
   /usr/bin/plutil -extract Version raw "$1/manifest.json" 2>/dev/null || true
 }
