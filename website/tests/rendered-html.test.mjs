@@ -43,9 +43,9 @@ test("server-renders the complete Deck Threads landing page", async () => {
 
 test("download routes keep stable and prerelease channels separate", async () => {
   const originalFetch = globalThis.fetch;
-  const stableInstaller = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1/Deck-Threads-Installer.pkg";
-  const stableCompanion = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1/Deck-Threads-Companion.pkg";
-  const stablePlugin = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1/com.roie.deck-threads.streamDeckPlugin";
+  const stableInstaller = "https://github.com/rschwabco/deck-threads/releases/latest/download/Deck-Threads-Installer.pkg";
+  const stableCompanion = "https://github.com/rschwabco/deck-threads/releases/latest/download/Deck-Threads-Companion.pkg";
+  const stablePlugin = "https://github.com/rschwabco/deck-threads/releases/latest/download/com.roie.deck-threads.streamDeckPlugin";
   const betaInstaller = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.2-beta.1/Deck-Threads-Installer.pkg";
   const betaCompanion = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.2-beta.1/Deck-Threads-Companion.pkg";
   const betaPlugin = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.2-beta.1/com.roie.deck-threads.streamDeckPlugin";
@@ -122,7 +122,7 @@ test("download routes keep stable and prerelease channels separate", async () =>
 test("download routes still resolve when the edge cache is unavailable", async () => {
   const originalFetch = globalThis.fetch;
   const originalCaches = globalThis.caches;
-  const expectedInstaller = "https://github.com/rschwabco/deck-threads/releases/download/v1.0.1/Deck-Threads-Installer.pkg";
+  const expectedInstaller = "https://github.com/rschwabco/deck-threads/releases/latest/download/Deck-Threads-Installer.pkg";
   globalThis.fetch = async () => Response.json([{
     draft: false,
     prerelease: false,
@@ -150,6 +150,21 @@ test("download routes still resolve when the edge cache is unavailable", async (
   } finally {
     globalThis.fetch = originalFetch;
     globalThis.caches = originalCaches;
+  }
+});
+
+test("stable download routes do not depend on the GitHub Releases API", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("GitHub API unavailable");
+  };
+
+  try {
+    const response = await render("/download/plugin");
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get("location"), "https://github.com/rschwabco/deck-threads/releases/latest/download/com.roie.deck-threads.streamDeckPlugin");
+  } finally {
+    globalThis.fetch = originalFetch;
   }
 });
 

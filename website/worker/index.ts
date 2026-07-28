@@ -27,6 +27,7 @@ interface ExecutionContext {
 }
 
 const RELEASES_API = "https://api.github.com/repos/rschwabco/deck-threads/releases?per_page=20";
+const LATEST_STABLE_DOWNLOAD_PREFIX = "https://github.com/rschwabco/deck-threads/releases/latest/download/";
 const DOWNLOAD_ROUTES = {
   "/download/installer": { assetName: "Deck-Threads-Installer.pkg", channel: "stable" },
   "/download/companion": { assetName: "Deck-Threads-Companion.pkg", channel: "stable" },
@@ -85,9 +86,12 @@ async function handleDownload(request: Request, assetName: string, channel: Rele
   if (cached) return cached;
 
   try {
-    const assets = await latestReleaseAssets(channel);
-    const downloadUrl = assets.get(assetName);
-    if (!downloadUrl || !downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
+    const downloadUrl = channel === "stable"
+      ? `${LATEST_STABLE_DOWNLOAD_PREFIX}${assetName}`
+      : (await latestReleaseAssets(channel)).get(assetName);
+    if (!downloadUrl
+      || (!downloadUrl.startsWith(RELEASE_DOWNLOAD_PREFIX)
+        && !downloadUrl.startsWith(LATEST_STABLE_DOWNLOAD_PREFIX))) {
       return errorResponse("The latest Deck Threads download is temporarily unavailable.", 503);
     }
 
