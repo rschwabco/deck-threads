@@ -40,22 +40,37 @@ function threadSlotFor(action: KeyAction<ThreadSlotSettings>, settings: ThreadSl
 export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
   private signatures = new Map<string, string>();
   private titleSignatures = new Map<string, string>();
+  private animationSignatures = new Map<string, string>();
+  private slots = new Map<string, number>();
+  private animationCursor = 0;
+  private animationPausedUntil = 0;
+  private animationTelemetryStartedAt?: number;
+  private animationWrites = 0;
+  private animationTelemetryLogged = false;
   private renderGate = new NonOverlappingTask();
 
   override async onWillAppear(event: WillAppearEvent<ThreadSlotSettings>) {
-    if (!event.action.isKey()) return;
-    this.signatures.delete(event.action.id);
-    this.titleSignatures.delete(event.action.id);
-    await this.render(event.action, threadSlotFor(event.action, event.payload.settings));
+    const current = event.action;
+    if (!current.isKey()) return;
+    const slot = threadSlotFor(current, event.payload.settings);
+    this.signatures.delete(current.id);
+    this.titleSignatures.delete(current.id);
+    this.animationSignatures.delete(current.id);
+    this.slots.set(current.id, slot);
+    await this.renderGate.run(() => this.render(current, slot));
   }
 
   override onWillDisappear(event: WillDisappearEvent<ThreadSlotSettings>) {
     this.signatures.delete(event.action.id);
     this.titleSignatures.delete(event.action.id);
+    this.animationSignatures.delete(event.action.id);
+    this.slots.delete(event.action.id);
   }
 
   override async onKeyDown(event: KeyDownEvent<ThreadSlotSettings>) {
     if (!event.action.isKey()) return;
+    // Keep the hardware transport clear while a key press is being handled.
+    this.animationPausedUntil = Date.now() + 500;
     const slot = threadSlotFor(event.action, event.payload.settings);
     const task = companionClient.tasks[slot];
     streamDeck.logger.info(`Pressed task slot ${slot}`, {
@@ -85,6 +100,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
 
   override async onKeyUp(event: KeyUpEvent<ThreadSlotSettings>) {
     if (!event.action.isKey()) return;
+    this.animationPausedUntil = Math.max(this.animationPausedUntil, Date.now() + 150);
     const slot = threadSlotFor(event.action, event.payload.settings);
     streamDeck.logger.info(`Released task slot ${slot}`, {
       actionId: event.action.id,
@@ -116,6 +132,12 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     return this.renderGate.run(() => this.performRenderAll());
   }
 
+  animateNext(frame: number): Promise<void> {
+    // Animation ticks share the render gate with state changes. When a write is
+    // slow, later ticks are dropped instead of building a device-wide backlog.
+    return this.renderGate.run(() => this.performAnimateNext(frame));
+  }
+
   private async performRenderAll() {
     // Serialize initial key updates. A companion launch can change all eight
     // keys at once, and a single ordered stream is safer for the hardware than
@@ -123,23 +145,90 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
     for (const current of [...this.actions].filter((action) => action.isKey())) {
       try {
         const settings = await current.getSettings<ThreadSlotSettings>();
-        await this.render(current, threadSlotFor(current, settings));
+        const slot = threadSlotFor(current, settings);
+        this.slots.set(current.id, slot);
+        await this.render(current, slot);
       } catch (error) {
         streamDeck.logger.error(`Failed to read settings for action ${current.id}`, error);
       }
     }
   }
 
-  private async render(current: KeyAction<ThreadSlotSettings>, slot: number) {
+  private async performAnimateNext(frame: number) {
+    if (!companionClient.online || Date.now() < this.animationPausedUntil) return;
+    const keys = [...this.actions].filter((action) => action.isKey());
+    if (!keys.length) return;
+
+    for (let offset = 0; offset < keys.length; offset += 1) {
+      const index = (this.animationCursor + offset) % keys.length;
+      const current = keys[index];
+      let slot = this.slots.get(current.id);
+      if (slot === undefined) {
+        const settings = await current.getSettings<ThreadSlotSettings>();
+        slot = threadSlotFor(current, settings);
+        this.slots.set(current.id, slot);
+      }
+      const task = companionClient.tasks[slot];
+      if (!task || companionClient.appearanceFor(task).animation === "still") continue;
+
+      this.animationCursor = (index + 1) % keys.length;
+      await this.renderAnimationFrame(current, slot, frame);
+      return;
+    }
+  }
+
+  private visualSignature(slot: number) {
     const task = companionClient.tasks[slot];
     const appearance = task ? companionClient.appearanceFor(task) : undefined;
     const typography = task ? companionClient.typographyFor(task) : undefined;
     const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-    const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`;
+    return {
+      task,
+      appearance,
+      typography,
+      showThreadTitle,
+      signature: `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`,
+    };
+  }
+
+  private async renderAnimationFrame(current: KeyAction<ThreadSlotSettings>, slot: number, frame: number) {
+    const visual = this.visualSignature(slot);
+    if (!visual.task || !visual.appearance || visual.appearance.animation === "still") return;
+    const signature = `${visual.signature}:${frame}`;
+    if (this.animationSignatures.get(current.id) === signature) return;
+    try {
+      const image = threadKey(
+        visual.task,
+        slot,
+        companionClient.online,
+        frame,
+        visual.showThreadTitle,
+        visual.appearance,
+        visual.typography,
+      );
+      // Animation is physical-device-only; the software preview is refreshed
+      // by state changes and does not need a 20 Hz image stream.
+      await current.setImage(image, { target: Target.Hardware });
+      this.animationSignatures.set(current.id, signature);
+      this.animationTelemetryStartedAt ||= Date.now();
+      this.animationWrites += 1;
+      const telemetryDuration = Date.now() - this.animationTelemetryStartedAt;
+      if (!this.animationTelemetryLogged && telemetryDuration >= 3000) {
+        this.animationTelemetryLogged = true;
+        streamDeck.logger.info("Animation renderer active", {
+          successfulWrites: this.animationWrites,
+          writesPerSecond: Number((this.animationWrites / (telemetryDuration / 1000)).toFixed(1)),
+        });
+      }
+    } catch (error) {
+      streamDeck.logger.error(`Failed to animate thread slot ${slot}`, error);
+    }
+  }
+
+  private async render(current: KeyAction<ThreadSlotSettings>, slot: number) {
+    const { task, appearance, typography, showThreadTitle, signature } = this.visualSignature(slot);
     if (this.signatures.get(current.id) === signature) return;
     try {
-      // Keep status visuals static on the physical device. Continuous image
-      // writes can block the Stream Deck host's HID key-reading path.
       const image = threadKey(task, slot, companionClient.online, 0, showThreadTitle, appearance, typography);
       await current.setImage(image, { target: Target.HardwareAndSoftware });
       if (this.titleSignatures.get(current.id) !== "") {
@@ -147,6 +236,7 @@ export class ThreadSlotAction extends SingletonAction<ThreadSlotSettings> {
         this.titleSignatures.set(current.id, "");
       }
       this.signatures.set(current.id, signature);
+      this.animationSignatures.delete(current.id);
     } catch (error) {
       streamDeck.logger.error(`Failed to render thread slot ${slot}`, error);
     }
@@ -158,4 +248,8 @@ export const threadSlotAction = new ThreadSlotAction();
 export async function refreshAllActions() {
   await companionClient.refresh();
   await threadSlotAction.renderAll();
+}
+
+export async function animateThreadActions(frame: number) {
+  await threadSlotAction.animateNext(frame);
 }

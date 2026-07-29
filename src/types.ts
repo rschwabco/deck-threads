@@ -77,7 +77,7 @@ export interface SystemSnapshot {
 }
 
 export type LabelConfigurableStatus = Exclude<CodexTaskStatus, "off">;
-export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse";
+export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse" | "wave" | "orbit" | "scan" | "sparkle";
 
 export interface StatusAppearance {
   backgroundColor: string;

@@ -383,6 +383,14 @@ h3 { font-size: 13px; font-weight: 650; }
   opacity: 0;
   transform: translateX(-75%);
 }
+.task-key::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  opacity: 0;
+  pointer-events: none;
+}
 
 .task-key:hover:not(:disabled) { filter: brightness(1.08); }
 .task-key:disabled { cursor: default; opacity: 0.42; }
@@ -409,6 +417,48 @@ h3 { font-size: 13px; font-weight: 650; }
 .task-key.motion-sweep::before { opacity: 1; animation: key-sheen 2.7s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
 .task-key.motion-breathe { animation: key-breathe 2.5s ease-in-out infinite; }
 .task-key.motion-pulse { animation: key-pulse 1.65s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.task-key.motion-wave::after {
+  opacity: 0.16;
+  background: repeating-linear-gradient(135deg, transparent 0 20px, var(--task-foreground) 20px 27px, transparent 27px 48px);
+  background-size: 68px 68px;
+  animation: key-wave 2.4s linear infinite;
+}
+.task-key.motion-orbit::after,
+.appearance-preview.motion-orbit::after {
+  inset: 7px;
+  border-radius: 11px;
+  background: conic-gradient(from 0deg, transparent 0deg 322deg, var(--task-foreground) 348deg, transparent 360deg);
+  opacity: 0.55;
+  -webkit-mask: radial-gradient(circle, transparent 0 68%, #000 70% 78%, transparent 80%);
+  mask: radial-gradient(circle, transparent 0 68%, #000 70% 78%, transparent 80%);
+  transform-origin: center;
+  animation: key-orbit 3s linear infinite;
+}
+.task-key.motion-scan::after,
+.appearance-preview.motion-scan::after {
+  top: 8%;
+  right: 7%;
+  bottom: auto;
+  left: 7%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--task-foreground);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--task-foreground) 62%, transparent);
+  opacity: 0.38;
+  animation: key-scan 2.4s ease-in-out infinite alternate;
+}
+.task-key.motion-scan::after { --scan-distance: 125px; }
+.appearance-preview.motion-scan::after { --scan-distance: 70px; }
+.task-key.motion-sparkle::after,
+.appearance-preview.motion-sparkle::after {
+  opacity: 0.46;
+  background:
+    radial-gradient(circle at 22% 26%, var(--task-foreground) 0 2px, transparent 3px),
+    radial-gradient(circle at 78% 21%, var(--task-foreground) 0 1.5px, transparent 2.5px),
+    radial-gradient(circle at 82% 73%, var(--task-foreground) 0 2px, transparent 3px),
+    radial-gradient(circle at 28% 79%, var(--task-foreground) 0 1.5px, transparent 2.5px);
+  animation: key-sparkle 1.9s ease-in-out infinite alternate;
+}
 .task-off {
   --source-border: #303746;
   --task-background: #202630;
@@ -646,6 +696,13 @@ h3 { font-size: 13px; font-weight: 650; }
   opacity: 0;
   transform: translateX(-75%);
 }
+.appearance-preview::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+}
 .appearance-preview > span {
   position: absolute;
   top: 9px;
@@ -659,6 +716,12 @@ h3 { font-size: 13px; font-weight: 650; }
 .appearance-preview.motion-sweep::before { opacity: 1; animation: preview-sweep 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
 .appearance-preview.motion-breathe { animation: key-breathe 2.5s ease-in-out infinite; }
 .appearance-preview.motion-pulse { animation: key-pulse 1.65s cubic-bezier(0.16, 1, 0.3, 1) infinite; }
+.appearance-preview.motion-wave::after {
+  opacity: 0.16;
+  background: repeating-linear-gradient(135deg, transparent 0 14px, var(--task-foreground) 14px 19px, transparent 19px 34px);
+  background-size: 48px 48px;
+  animation: key-wave 2.4s linear infinite;
+}
 .appearance-card-body { min-width: 0; }
 .appearance-card-title { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .appearance-card-title h3 { font-size: 12px; }
@@ -776,6 +839,10 @@ h3 { font-size: 13px; font-weight: 650; }
 @keyframes preview-sweep { 0%, 36% { transform: translateX(-80%); } 76%, 100% { transform: translateX(88%); } }
 @keyframes key-breathe { 0%, 100% { filter: brightness(0.94); } 50% { filter: brightness(1.18); } }
 @keyframes key-pulse { 0%, 100% { filter: brightness(0.96); transform: scale(0.985); } 48% { filter: brightness(1.2); transform: scale(1); } }
+@keyframes key-wave { to { background-position: 68px 68px; } }
+@keyframes key-orbit { to { transform: rotate(360deg); } }
+@keyframes key-scan { to { transform: translateY(var(--scan-distance)); } }
+@keyframes key-sparkle { 0%, 100% { filter: brightness(0.7); } 45% { filter: brightness(1.65); } }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
