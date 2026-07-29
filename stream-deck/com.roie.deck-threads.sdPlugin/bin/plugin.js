@@ -9413,17 +9413,52 @@ function contrastForeground(backgroundColor) {
 function motionLayer(animation, frame, foreground) {
     if (animation === "sweep") {
         const sheenX = -92 + (frame % 48) * 6.5;
-        return `<rect x="${sheenX}" y="-30" width="30" height="210" fill="${foreground}" opacity="0.16" transform="rotate(20 72 72)"/>`;
+        return `<g data-animation="sweep" data-frame="${frame}"><rect x="${sheenX}" y="-30" width="30" height="210" fill="${foreground}" opacity="0.16" transform="rotate(20 72 72)"/></g>`;
     }
     if (animation === "breathe") {
         const opacity = (0.025 + (Math.sin(frame * 0.12) + 1) * 0.035).toFixed(3);
-        return `<rect width="144" height="144" rx="16" fill="${foreground}" opacity="${opacity}"/>`;
+        return `<g data-animation="breathe" data-frame="${frame}"><rect width="144" height="144" rx="16" fill="${foreground}" opacity="${opacity}"/></g>`;
     }
     if (animation === "pulse") {
         const phase = Math.abs(frame) % 32;
         const radius = 20 + phase * 1.65;
         const opacity = Math.max(0.04, 0.36 - phase * 0.01).toFixed(2);
-        return `<circle cx="72" cy="72" r="${radius}" fill="none" stroke="${foreground}" stroke-width="7" opacity="${opacity}"/>`;
+        return `<g data-animation="pulse" data-frame="${frame}"><circle cx="72" cy="72" r="${radius}" fill="none" stroke="${foreground}" stroke-width="7" opacity="${opacity}"/></g>`;
+    }
+    if (animation === "wave") {
+        const offset = (frame % 48) * 5.5 - 168;
+        return `<g data-animation="wave" data-frame="${frame}" fill="none" stroke="${foreground}" stroke-width="10" opacity="0.13" transform="translate(${offset} 0)">
+      <path d="M0 24 Q36 0 72 24 T144 24 T216 24 T288 24"/>
+      <path d="M0 72 Q36 48 72 72 T144 72 T216 72 T288 72"/>
+      <path d="M0 120 Q36 96 72 120 T144 120 T216 120 T288 120"/>
+    </g>`;
+    }
+    if (animation === "orbit") {
+        const angle = (frame % 60) * (Math.PI * 2 / 60);
+        const x = (72 + Math.cos(angle) * 52).toFixed(2);
+        const y = (72 + Math.sin(angle) * 52).toFixed(2);
+        return `<g data-animation="orbit" data-frame="${frame}">
+      <circle cx="${x}" cy="${y}" r="13" fill="${foreground}" opacity="0.08"/>
+      <circle cx="${x}" cy="${y}" r="5" fill="${foreground}" opacity="0.52"/>
+    </g>`;
+    }
+    if (animation === "scan") {
+        const phase = frame % 48;
+        const y = phase < 24 ? 12 + phase * 5 : 132 - (phase - 24) * 5;
+        return `<g data-animation="scan" data-frame="${frame}">
+      <rect x="8" y="${y - 8}" width="128" height="16" rx="8" fill="${foreground}" opacity="0.05"/>
+      <rect x="10" y="${y}" width="124" height="3" rx="1.5" fill="${foreground}" opacity="0.38"/>
+    </g>`;
+    }
+    if (animation === "sparkle") {
+        const phase = frame % 40;
+        const glint = (offset) => (0.08 + ((Math.sin((phase + offset) * 0.34) + 1) / 2) * 0.42).toFixed(2);
+        return `<g data-animation="sparkle" data-frame="${frame}" fill="${foreground}">
+      <circle cx="31" cy="35" r="4" opacity="${glint(0)}"/>
+      <circle cx="111" cy="30" r="3" opacity="${glint(11)}"/>
+      <circle cx="117" cy="104" r="4.5" opacity="${glint(21)}"/>
+      <circle cx="39" cy="114" r="3.5" opacity="${glint(31)}"/>
+    </g>`;
     }
     return "";
 }
@@ -9579,21 +9614,36 @@ let ThreadSlotAction = (() => {
         }
         signatures = new Map();
         titleSignatures = new Map();
+        animationSignatures = new Map();
+        slots = new Map();
+        animationCursor = 0;
+        animationPausedUntil = 0;
+        animationTelemetryStartedAt;
+        animationWrites = 0;
+        animationTelemetryLogged = false;
         renderGate = new NonOverlappingTask();
         async onWillAppear(event) {
-            if (!event.action.isKey())
+            const current = event.action;
+            if (!current.isKey())
                 return;
-            this.signatures.delete(event.action.id);
-            this.titleSignatures.delete(event.action.id);
-            await this.render(event.action, threadSlotFor(event.action, event.payload.settings));
+            const slot = threadSlotFor(current, event.payload.settings);
+            this.signatures.delete(current.id);
+            this.titleSignatures.delete(current.id);
+            this.animationSignatures.delete(current.id);
+            this.slots.set(current.id, slot);
+            await this.renderGate.run(() => this.render(current, slot));
         }
         onWillDisappear(event) {
             this.signatures.delete(event.action.id);
             this.titleSignatures.delete(event.action.id);
+            this.animationSignatures.delete(event.action.id);
+            this.slots.delete(event.action.id);
         }
         async onKeyDown(event) {
             if (!event.action.isKey())
                 return;
+            // Keep the hardware transport clear while a key press is being handled.
+            this.animationPausedUntil = Date.now() + 500;
             const slot = threadSlotFor(event.action, event.payload.settings);
             const task = companionClient.tasks[slot];
             streamDeck.logger.info(`Pressed task slot ${slot}`, {
@@ -9624,6 +9674,7 @@ let ThreadSlotAction = (() => {
         async onKeyUp(event) {
             if (!event.action.isKey())
                 return;
+            this.animationPausedUntil = Math.max(this.animationPausedUntil, Date.now() + 150);
             const slot = threadSlotFor(event.action, event.payload.settings);
             streamDeck.logger.info(`Released task slot ${slot}`, {
                 actionId: event.action.id,
@@ -9652,6 +9703,11 @@ let ThreadSlotAction = (() => {
             // backlog here blocks key events for the entire device.
             return this.renderGate.run(() => this.performRenderAll());
         }
+        animateNext(frame) {
+            // Animation ticks share the render gate with state changes. When a write is
+            // slow, later ticks are dropped instead of building a device-wide backlog.
+            return this.renderGate.run(() => this.performAnimateNext(frame));
+        }
         async performRenderAll() {
             // Serialize initial key updates. A companion launch can change all eight
             // keys at once, and a single ordered stream is safer for the hardware than
@@ -9659,24 +9715,84 @@ let ThreadSlotAction = (() => {
             for (const current of [...this.actions].filter((action) => action.isKey())) {
                 try {
                     const settings = await current.getSettings();
-                    await this.render(current, threadSlotFor(current, settings));
+                    const slot = threadSlotFor(current, settings);
+                    this.slots.set(current.id, slot);
+                    await this.render(current, slot);
                 }
                 catch (error) {
                     streamDeck.logger.error(`Failed to read settings for action ${current.id}`, error);
                 }
             }
         }
-        async render(current, slot) {
+        async performAnimateNext(frame) {
+            if (!companionClient.online || Date.now() < this.animationPausedUntil)
+                return;
+            const keys = [...this.actions].filter((action) => action.isKey());
+            if (!keys.length)
+                return;
+            for (let offset = 0; offset < keys.length; offset += 1) {
+                const index = (this.animationCursor + offset) % keys.length;
+                const current = keys[index];
+                let slot = this.slots.get(current.id);
+                if (slot === undefined) {
+                    const settings = await current.getSettings();
+                    slot = threadSlotFor(current, settings);
+                    this.slots.set(current.id, slot);
+                }
+                const task = companionClient.tasks[slot];
+                if (!task || companionClient.appearanceFor(task).animation === "still")
+                    continue;
+                this.animationCursor = (index + 1) % keys.length;
+                await this.renderAnimationFrame(current, slot, frame);
+                return;
+            }
+        }
+        visualSignature(slot) {
             const task = companionClient.tasks[slot];
             const appearance = task ? companionClient.appearanceFor(task) : undefined;
             const typography = task ? companionClient.typographyFor(task) : undefined;
             const showThreadTitle = task ? companionClient.showThreadTitle(task.status) : false;
-            const signature = `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`;
+            return {
+                task,
+                appearance,
+                typography,
+                showThreadTitle,
+                signature: `${companionClient.online}:${task?.stableId}:${task?.sourceLabel}:${task?.status}:${task?.title}:${task?.projectLabel}:${task?.pinned}:${showThreadTitle}:${appearance?.backgroundColor}:${appearance?.animation}:${typography?.slotHandleFontSize}:${typography?.threadNameFontSize}`,
+            };
+        }
+        async renderAnimationFrame(current, slot, frame) {
+            const visual = this.visualSignature(slot);
+            if (!visual.task || !visual.appearance || visual.appearance.animation === "still")
+                return;
+            const signature = `${visual.signature}:${frame}`;
+            if (this.animationSignatures.get(current.id) === signature)
+                return;
+            try {
+                const image = threadKey(visual.task, slot, companionClient.online, frame, visual.showThreadTitle, visual.appearance, visual.typography);
+                // Animation is physical-device-only; the software preview is refreshed
+                // by state changes and does not need a 20 Hz image stream.
+                await current.setImage(image, { target: Target.Hardware });
+                this.animationSignatures.set(current.id, signature);
+                this.animationTelemetryStartedAt ||= Date.now();
+                this.animationWrites += 1;
+                const telemetryDuration = Date.now() - this.animationTelemetryStartedAt;
+                if (!this.animationTelemetryLogged && telemetryDuration >= 3000) {
+                    this.animationTelemetryLogged = true;
+                    streamDeck.logger.info("Animation renderer active", {
+                        successfulWrites: this.animationWrites,
+                        writesPerSecond: Number((this.animationWrites / (telemetryDuration / 1000)).toFixed(1)),
+                    });
+                }
+            }
+            catch (error) {
+                streamDeck.logger.error(`Failed to animate thread slot ${slot}`, error);
+            }
+        }
+        async render(current, slot) {
+            const { task, appearance, typography, showThreadTitle, signature } = this.visualSignature(slot);
             if (this.signatures.get(current.id) === signature)
                 return;
             try {
-                // Keep status visuals static on the physical device. Continuous image
-                // writes can block the Stream Deck host's HID key-reading path.
                 const image = threadKey(task, slot, companionClient.online, 0, showThreadTitle, appearance, typography);
                 await current.setImage(image, { target: Target.HardwareAndSoftware });
                 if (this.titleSignatures.get(current.id) !== "") {
@@ -9684,6 +9800,7 @@ let ThreadSlotAction = (() => {
                     this.titleSignatures.set(current.id, "");
                 }
                 this.signatures.set(current.id, signature);
+                this.animationSignatures.delete(current.id);
             }
             catch (error) {
                 streamDeck.logger.error(`Failed to render thread slot ${slot}`, error);
@@ -9697,17 +9814,29 @@ async function refreshAllActions() {
     await companionClient.refresh();
     await threadSlotAction.renderAll();
 }
+async function animateThreadActions(frame) {
+    await threadSlotAction.animateNext(frame);
+}
 
 const REFRESH_INTERVAL_MS = 1500;
+const ANIMATION_INTERVAL_MS = 50;
+const ANIMATION_CYCLE_FRAMES = 2880;
 function scheduleRefresh(refresh, setIntervalFn = setInterval) {
     void refresh();
     return setIntervalFn(() => void refresh(), REFRESH_INTERVAL_MS);
+}
+function animationFrameAt(nowMs) {
+    return Math.floor(nowMs / ANIMATION_INTERVAL_MS) % ANIMATION_CYCLE_FRAMES;
+}
+function scheduleAnimation(animate, setIntervalFn = setInterval, now = Date.now) {
+    return setIntervalFn(() => void animate(animationFrameAt(now())), ANIMATION_INTERVAL_MS);
 }
 
 streamDeck.logger.setLevel("info");
 streamDeck.actions.registerAction(threadSlotAction);
 streamDeck.connect();
 scheduleRefresh(refreshAllActions);
+scheduleAnimation(animateThreadActions);
 setTimeout(() => {
     streamDeck.logger.info("Deck Threads ready", {
         companionOnline: companionClient.online,

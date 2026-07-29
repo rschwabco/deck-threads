@@ -37,7 +37,7 @@ interface ThreadResponse {
 }
 
 type LabelStatus = Exclude<TaskStatus, "off">;
-export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse";
+export type KeyAnimation = "still" | "breathe" | "sweep" | "pulse" | "wave" | "orbit" | "scan" | "sparkle";
 export type StatusAppearance = { backgroundColor: string; animation: KeyAnimation };
 export type KeyTypography = { slotHandleFontSize: number; threadNameFontSize: number };
 type DisplaySettings = {

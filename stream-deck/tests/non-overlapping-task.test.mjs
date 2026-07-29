@@ -40,3 +40,21 @@ test("clears the in-flight gate after a failed task", async () => {
   });
   assert.equal(recovered, true);
 });
+
+test("drops an animation-timer burst while a hardware write is stalled", async () => {
+  const gate = new NonOverlappingTask();
+  let release;
+  let writes = 0;
+  const hardware = new Promise((resolve) => { release = resolve; });
+  const tick = () => gate.run(async () => {
+    writes += 1;
+    await hardware;
+  });
+
+  const pending = Array.from({ length: 20 }, tick);
+  await Promise.resolve();
+  assert.equal(writes, 1);
+  assert.equal(new Set(pending).size, 1);
+  release();
+  await Promise.all(pending);
+});

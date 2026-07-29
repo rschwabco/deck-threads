@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.0.3 — 2026-07-29
+
+- Restores smooth physical Stream Deck animations with a time-based, single-writer renderer capped at 20 hardware updates per second, preventing stale-frame queues and device-wide update bursts.
+- Adds Wave, Orbit, Scan, and Sparkle motion options alongside Still, Breathe, Sweep, and Pulse, with matching live previews and persistent per-source settings.
+
 ## 1.0.2 — 2026-07-28
 
 - Detects whether the Deck Threads Stream Deck plugin is installed, shows the installed and bundled versions, and offers Install, Update, or Restart directly from the companion app.

@@ -51,6 +51,7 @@ async function captureWindow(application, outputPath) {
 
   try {
     const page = await application.firstWindow();
+    await page.emulateMedia({ reducedMotion: "no-preference" });
     await page.waitForLoadState("domcontentloaded");
     await page.getByRole("heading", { name: "Eight live task keys" }).waitFor();
     await page.waitForFunction(() => /Working|Question|Unread|Read/.test(document.querySelector(".task-key")?.getAttribute("aria-label") || ""));
@@ -80,8 +81,10 @@ async function captureWindow(application, outputPath) {
     assert.match(firstTaskLabel || "", /Working|Question|Unread|Read/);
     assert.equal(await page.locator(".sidebar nav .nav-item").count(), 6);
     assert.equal(await page.locator(".source-badge").count(), 0);
-    assert.ok(await page.locator(".task-key.task-source-codex").count() > 0);
-    assert.ok(await page.locator(".task-key.task-source-claude").count() > 0);
+    for (const sourceId of ["codex", "claude"]) {
+      const expectedSourceCount = threadPayload.tasks.filter((task) => task?.sourceId === sourceId).length;
+      assert.equal(await page.locator(`.task-key.task-source-${sourceId}`).count(), expectedSourceCount);
+    }
 
     const invalidOpen = await page.evaluate(() => window.bridgeApi.openTask("claude", "not-a-thread-id", "Invalid task"));
     assert.equal(invalidOpen.ok, false);
@@ -109,7 +112,7 @@ async function captureWindow(application, outputPath) {
         const [state, label, color, foreground] = states[index];
         button.classList.remove("task-working", "task-question", "task-unread", "task-read", "task-waiting", "task-error", "task-off");
         button.classList.remove("task-source-codex", "task-source-claude");
-        button.classList.remove("motion-still", "motion-breathe", "motion-sweep", "motion-pulse");
+        button.classList.remove("motion-still", "motion-breathe", "motion-sweep", "motion-pulse", "motion-wave", "motion-orbit", "motion-scan", "motion-sparkle");
         button.classList.add(`task-${state}`);
         button.classList.add(index < 3 ? "task-source-codex" : "task-source-claude");
         button.classList.add(index % 2 ? "motion-pulse" : "motion-sweep");
@@ -120,7 +123,7 @@ async function captureWindow(application, outputPath) {
         if (statusLine) statusLine.textContent = label;
       });
     });
-    await page.waitForTimeout(220);
+    await page.waitForTimeout(400);
     const statusBorders = await page.locator(".task-key").evaluateAll((buttons) =>
       buttons.slice(0, 6).map((button) => getComputedStyle(button).borderTopColor),
     );
@@ -165,14 +168,14 @@ async function captureWindow(application, outputPath) {
     await page.getByRole("heading", { name: "Connection status" }).waitFor();
     assert.equal(await page.locator(".task-grid").count(), 0);
     const streamDeckStatus = (await page.locator(".health-item").filter({ hasText: "Stream Deck" }).textContent())?.replace(/\s+/g, " ").trim();
-    assert.match(streamDeckStatus || "", /Online|Offline|Error/);
+    assert.match(streamDeckStatus || "", /Online|Ready|Offline|Error/);
     const claudeStatus = (await page.locator(".health-item").filter({ hasText: "Claude" }).textContent())?.replace(/\s+/g, " ").trim();
     assert.match(claudeStatus || "", /Online|Offline|Error/);
 
     await page.getByRole("button", { name: "Appearance" }).click();
     await page.getByRole("heading", { name: "Status backgrounds and motion" }).waitFor();
     assert.equal(await page.locator(".appearance-card").count(), 6);
-    assert.equal(await page.locator(".animation-options button").count(), 24);
+    assert.equal(await page.locator(".animation-options button").count(), 48);
     assert.equal(await page.locator(".font-size-control").count(), 2);
     const codexHandleSize = page.getByLabel("Slot handle font size for Codex");
     const codexThreadSize = page.getByLabel("Thread name font size for Codex");
@@ -180,13 +183,18 @@ async function captureWindow(application, outputPath) {
     await codexThreadSize.fill("16");
     const codexWorkingColor = page.getByLabel("Background color for Codex Working");
     await codexWorkingColor.fill("#123456");
-    await page.getByRole("button", { name: "Use Pulse animation for Codex Working" }).click();
+    await page.getByRole("button", { name: "Use Orbit animation for Codex Working" }).click();
+    const workingPreview = page.locator(".appearance-card").filter({ has: page.getByRole("heading", { name: "Working", exact: true }) }).locator(".appearance-preview");
+    assert.equal(await workingPreview.evaluate((element) => getComputedStyle(element, "::after").animationName), "key-orbit");
+    const orbitTransform = await workingPreview.evaluate((element) => getComputedStyle(element, "::after").transform);
+    await page.waitForTimeout(120);
+    assert.notEqual(await workingPreview.evaluate((element) => getComputedStyle(element, "::after").transform), orbitTransform);
     await page.waitForTimeout(220);
     const appearanceSettingsPath = path.join(userDataDir, "display-settings.json");
     let persistedAppearance = JSON.parse(fs.readFileSync(appearanceSettingsPath, "utf8"));
     assert.equal(persistedAppearance.version, 3);
     assert.equal(persistedAppearance.statusAppearance.codex.working.backgroundColor, "#123456");
-    assert.equal(persistedAppearance.statusAppearance.codex.working.animation, "pulse");
+    assert.equal(persistedAppearance.statusAppearance.codex.working.animation, "orbit");
     assert.deepEqual(persistedAppearance.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });
     assert.equal(await page.locator(".typography-preview-handle").evaluate((element) => getComputedStyle(element).fontSize), "24px");
     assert.equal(await page.locator(".typography-preview strong").evaluate((element) => getComputedStyle(element).fontSize), "16px");

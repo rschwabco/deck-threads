@@ -3,7 +3,7 @@ const path = require("node:path");
 
 const DISPLAY_STATUSES = ["working", "question", "unread", "read", "waiting", "error"];
 const TASK_SOURCES = ["codex", "claude"];
-const KEY_ANIMATIONS = ["still", "breathe", "sweep", "pulse"];
+const KEY_ANIMATIONS = ["still", "breathe", "sweep", "pulse", "wave", "orbit", "scan", "sparkle"];
 const FONT_SIZE_LIMITS = Object.freeze({
   slotHandleFontSize: Object.freeze({ min: 12, max: 28, fallback: 17 }),
   threadNameFontSize: Object.freeze({ min: 9, max: 20, fallback: 12 }),

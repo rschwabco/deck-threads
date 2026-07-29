@@ -429,7 +429,7 @@ try {
   const savedSettings = writeDisplaySettings(settingsPath, {
     showThreadTitle: { question: true, read: false },
     statusAppearance: {
-      codex: { working: { backgroundColor: "#123456", animation: "breathe" } },
+      codex: { working: { backgroundColor: "#123456", animation: "orbit" } },
       claude: { error: { backgroundColor: "#ABCDEF", animation: "sweep" } },
     },
     typography: {
@@ -440,7 +440,7 @@ try {
   assert.equal(savedSettings.showThreadTitle.question, true);
   assert.equal(savedSettings.showThreadTitle.read, false);
   assert.equal(savedSettings.showThreadTitle.working, false);
-  assert.deepEqual(savedSettings.statusAppearance.codex.working, { backgroundColor: "#123456", animation: "breathe" });
+  assert.deepEqual(savedSettings.statusAppearance.codex.working, { backgroundColor: "#123456", animation: "orbit" });
   assert.deepEqual(savedSettings.statusAppearance.claude.error, { backgroundColor: "#ABCDEF", animation: "sweep" });
   assert.equal(savedSettings.statusAppearance.codex.read.animation, "still");
   assert.deepEqual(savedSettings.typography.codex, { slotHandleFontSize: 24, threadNameFontSize: 16 });

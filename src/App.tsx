@@ -51,6 +51,10 @@ const ANIMATION_META: Array<{ id: KeyAnimation; label: string; description: stri
   { id: "breathe", label: "Breathe", description: "Soft brightness cycle" },
   { id: "sweep", label: "Sweep", description: "Light moves across the key" },
   { id: "pulse", label: "Pulse", description: "Expanding attention signal" },
+  { id: "wave", label: "Wave", description: "Diagonal bands flow across the key" },
+  { id: "orbit", label: "Orbit", description: "A light circles the key edge" },
+  { id: "scan", label: "Scan", description: "A focused line scans the key" },
+  { id: "sparkle", label: "Sparkle", description: "Small glints shimmer in place" },
 ];
 const DEFAULT_STATUS_APPEARANCE: Record<LabelConfigurableStatus, StatusAppearance> = {
   working: { backgroundColor: "#24375F", animation: "sweep" },

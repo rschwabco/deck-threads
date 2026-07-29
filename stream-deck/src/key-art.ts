@@ -88,17 +88,52 @@ function contrastForeground(backgroundColor: string) {
 function motionLayer(animation: KeyAnimation, frame: number, foreground: string) {
   if (animation === "sweep") {
     const sheenX = -92 + (frame % 48) * 6.5;
-    return `<rect x="${sheenX}" y="-30" width="30" height="210" fill="${foreground}" opacity="0.16" transform="rotate(20 72 72)"/>`;
+    return `<g data-animation="sweep" data-frame="${frame}"><rect x="${sheenX}" y="-30" width="30" height="210" fill="${foreground}" opacity="0.16" transform="rotate(20 72 72)"/></g>`;
   }
   if (animation === "breathe") {
     const opacity = (0.025 + (Math.sin(frame * 0.12) + 1) * 0.035).toFixed(3);
-    return `<rect width="144" height="144" rx="16" fill="${foreground}" opacity="${opacity}"/>`;
+    return `<g data-animation="breathe" data-frame="${frame}"><rect width="144" height="144" rx="16" fill="${foreground}" opacity="${opacity}"/></g>`;
   }
   if (animation === "pulse") {
     const phase = Math.abs(frame) % 32;
     const radius = 20 + phase * 1.65;
     const opacity = Math.max(0.04, 0.36 - phase * 0.01).toFixed(2);
-    return `<circle cx="72" cy="72" r="${radius}" fill="none" stroke="${foreground}" stroke-width="7" opacity="${opacity}"/>`;
+    return `<g data-animation="pulse" data-frame="${frame}"><circle cx="72" cy="72" r="${radius}" fill="none" stroke="${foreground}" stroke-width="7" opacity="${opacity}"/></g>`;
+  }
+  if (animation === "wave") {
+    const offset = (frame % 48) * 5.5 - 168;
+    return `<g data-animation="wave" data-frame="${frame}" fill="none" stroke="${foreground}" stroke-width="10" opacity="0.13" transform="translate(${offset} 0)">
+      <path d="M0 24 Q36 0 72 24 T144 24 T216 24 T288 24"/>
+      <path d="M0 72 Q36 48 72 72 T144 72 T216 72 T288 72"/>
+      <path d="M0 120 Q36 96 72 120 T144 120 T216 120 T288 120"/>
+    </g>`;
+  }
+  if (animation === "orbit") {
+    const angle = (frame % 60) * (Math.PI * 2 / 60);
+    const x = (72 + Math.cos(angle) * 52).toFixed(2);
+    const y = (72 + Math.sin(angle) * 52).toFixed(2);
+    return `<g data-animation="orbit" data-frame="${frame}">
+      <circle cx="${x}" cy="${y}" r="13" fill="${foreground}" opacity="0.08"/>
+      <circle cx="${x}" cy="${y}" r="5" fill="${foreground}" opacity="0.52"/>
+    </g>`;
+  }
+  if (animation === "scan") {
+    const phase = frame % 48;
+    const y = phase < 24 ? 12 + phase * 5 : 132 - (phase - 24) * 5;
+    return `<g data-animation="scan" data-frame="${frame}">
+      <rect x="8" y="${y - 8}" width="128" height="16" rx="8" fill="${foreground}" opacity="0.05"/>
+      <rect x="10" y="${y}" width="124" height="3" rx="1.5" fill="${foreground}" opacity="0.38"/>
+    </g>`;
+  }
+  if (animation === "sparkle") {
+    const phase = frame % 40;
+    const glint = (offset: number) => (0.08 + ((Math.sin((phase + offset) * 0.34) + 1) / 2) * 0.42).toFixed(2);
+    return `<g data-animation="sparkle" data-frame="${frame}" fill="${foreground}">
+      <circle cx="31" cy="35" r="4" opacity="${glint(0)}"/>
+      <circle cx="111" cy="30" r="3" opacity="${glint(11)}"/>
+      <circle cx="117" cy="104" r="4.5" opacity="${glint(21)}"/>
+      <circle cx="39" cy="114" r="3.5" opacity="${glint(31)}"/>
+    </g>`;
   }
   return "";
 }
